@@ -499,6 +499,22 @@ class ApiService {
     }
   }
 
+  // Отметка чата как прочитанного на сервере
+  Future<bool> markChatAsRead(int chatId) async {
+    try {
+      final response = await _dio.post('/api/chats/$chatId/read');
+      return response.statusCode == 200;
+    } catch (_) {
+      try {
+        final response2 = await _dio.post('/api/chats/$chatId/read-all');
+        return response2.statusCode == 200;
+      } catch (e) {
+        debugPrint('ApiService.markChatAsRead error: $e');
+        return false;
+      }
+    }
+  }
+
   // 12. Получение данных канала
   Future<Map<String, dynamic>?> getChannel(int chatId) async {
     try {

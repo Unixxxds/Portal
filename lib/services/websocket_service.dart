@@ -171,6 +171,19 @@ class WebSocketService {
     });
   }
 
+  void markChatAsRead(int chatId) {
+    send({
+      'type': 'read_chat',
+      'chatId': chatId,
+      'chat_id': chatId,
+    });
+    send({
+      'type': 'mark_read',
+      'chatId': chatId,
+      'chat_id': chatId,
+    });
+  }
+
   void disconnect() {
     _isDisposed = true;
     _pingTimer?.cancel();

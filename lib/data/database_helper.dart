@@ -361,6 +361,7 @@ class DatabaseHelper {
     required Map<String, dynamic> user,
     required List<dynamic> chats,
     required Map<String, dynamic> recentMessages,
+    int? activeChatId,
   }) async {
     final db = await instance.database;
     await db.transaction((txn) async {
@@ -389,7 +390,16 @@ class DatabaseHelper {
         );
       }
 
-      // 2. Сохраняем чаты
+      // 2. Получаем текущие локальные чаты для сохранения прочитанного состояния
+      final existingRows = await txn.query(
+        'chats',
+        columns: ['id', 'unread_count', 'last_message_time', 'last_message_text'],
+      );
+      final Map<int, Map<String, dynamic>> existingMap = {
+        for (final r in existingRows) (r['id'] as int): r
+      };
+
+      // Сохраняем чаты
       final batch = txn.batch();
       for (final c in chats) {
         if (c is! Map<String, dynamic>) continue;
@@ -402,6 +412,28 @@ class DatabaseHelper {
         } else if (c['last_message_text'] != null) {
           lastText = c['last_message_text'].toString();
           lastTime = c['last_message_time']?.toString() ?? '';
+        }
+
+        final rawId = (c['chat_id'] ?? c['id']);
+        final cId = rawId is int ? rawId : int.tryParse(rawId.toString()) ?? 0;
+        final serverUnread = c['unread_count'] is int ? c['unread_count'] as int : int.tryParse(c['unread_count']?.toString() ?? '0') ?? 0;
+
+        int finalUnread = serverUnread;
+        if (cId == activeChatId) {
+          finalUnread = 0;
+        } else {
+          final existing = existingMap[cId];
+          if (existing != null) {
+            final localUnread = existing['unread_count'] is int ? existing['unread_count'] as int : 0;
+            final localLastTime = existing['last_message_time']?.toString() ?? '';
+            final localLastText = existing['last_message_text']?.toString() ?? '';
+
+            // Если чат локально уже был прочитан (unread_count == 0)
+            // и новое сообщение еще не пришло, удерживаем unread_count = 0
+            if (localUnread == 0 && (lastTime == localLastTime || lastText == localLastText || (lastTime.isEmpty && lastText.isEmpty))) {
+              finalUnread = 0;
+            }
+          }
         }
 
         final pId = c['participant_id'] is int
@@ -429,13 +461,13 @@ class DatabaseHelper {
         batch.insert(
           'chats',
           {
-            'id': (c['chat_id'] ?? c['id']) is int ? (c['chat_id'] ?? c['id']) : int.tryParse((c['chat_id'] ?? c['id']).toString()) ?? 0,
+            'id': cId,
             'title': title,
             'type': isChan ? 'channel' : 'direct',
             'avatar': c['avatar']?.toString() ?? '',
             'last_message_text': lastText,
             'last_message_time': lastTime,
-            'unread_count': c['unread_count'] is int ? c['unread_count'] : int.tryParse(c['unread_count']?.toString() ?? '0') ?? 0,
+            'unread_count': finalUnread,
             'is_pinned': (c['is_pinned'] == 1 || c['is_pinned'] == true) ? 1 : 0,
             'is_channel': isChan ? 1 : 0,
             'is_online': (c['is_online'] == true || c['is_online'] == 1) ? 1 : 0,
@@ -605,6 +637,12 @@ class DatabaseHelper {
       'chats',
       {'unread_count': 0},
       where: 'id = ?',
+      whereArgs: [chatId],
+    );
+    await db.update(
+      'messages',
+      {'is_read': 1},
+      where: 'chat_id = ?',
       whereArgs: [chatId],
     );
   }

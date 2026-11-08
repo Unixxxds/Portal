@@ -309,17 +309,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
             ),
           ),
         ),
-
-        // iOS Home Indicator
-        Container(
-          width: 134,
-          height: 5,
-          margin: const EdgeInsets.only(top: 2, bottom: 6),
-          decoration: BoxDecoration(
-            color: const Color(0x66FFFFFF),
-            borderRadius: BorderRadius.circular(100),
-          ),
-        ),
+        const SizedBox(height: 6),
       ],
     );
   }

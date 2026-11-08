@@ -100,6 +100,7 @@ class ChatProvider with ChangeNotifier {
           user: userData is Map<String, dynamic> ? userData : {},
           chats: chatsData,
           recentMessages: messagesData,
+          activeChatId: _activeChatId,
         );
 
         // Перезагружаем список чатов из локальной БД
@@ -126,7 +127,14 @@ class ChatProvider with ChangeNotifier {
     final chatIdx = _chats.indexWhere((c) => c.id == chatId);
     if (chatIdx != -1) {
       _chats[chatIdx] = _chats[chatIdx].copyWith(unreadCount: 0);
+    }
+    notifyListeners();
 
+    // Оповещаем бэкенд и WebSocket о прочтении сообщений в чате
+    ApiService.instance.markChatAsRead(chatId);
+    WebSocketService.instance.markChatAsRead(chatId);
+
+    if (chatIdx != -1) {
       // Актуализируем статус пользователя (онлайн/был недавно)
       final chat = _chats[chatIdx];
       if (!chat.isChannel && !chat.isSaved) {
@@ -191,6 +199,7 @@ class ChatProvider with ChangeNotifier {
           }
         }
         _messagesByChat[chatId] = await DatabaseHelper.instance.getMessages(chatId);
+        await DatabaseHelper.instance.resetUnread(chatId);
         notifyListeners();
       }
     } catch (_) {}
@@ -731,6 +740,10 @@ class ChatProvider with ChangeNotifier {
               list.add(msg);
               _messagesByChat[msg.chatId] = list;
             }
+            if (msg.id > 0) {
+              ApiService.instance.viewMessage(msg.id);
+            }
+            WebSocketService.instance.markChatAsRead(msg.chatId);
           }
 
           // Обновляем список чатов
@@ -814,10 +827,22 @@ class ChatProvider with ChangeNotifier {
         break;
 
       case 'messages_read':
-        final chatId = event['chat_id'] is int ? event['chat_id'] as int : int.tryParse(event['chat_id'].toString()) ?? 0;
-        if (chatId > 0 && _messagesByChat.containsKey(chatId)) {
-          final list = _messagesByChat[chatId]!;
-          _messagesByChat[chatId] = list.map((m) => m.copyWith(isRead: true)).toList();
+      case 'read_chat':
+      case 'chat_read':
+        final chatId = event['chat_id'] is int
+            ? event['chat_id'] as int
+            : int.tryParse(event['chat_id']?.toString() ?? '') ??
+                (event['chatId'] is int ? event['chatId'] as int : int.tryParse(event['chatId']?.toString() ?? '') ?? 0);
+        if (chatId > 0) {
+          await DatabaseHelper.instance.resetUnread(chatId);
+          final cIdx = _chats.indexWhere((c) => c.id == chatId);
+          if (cIdx != -1) {
+            _chats[cIdx] = _chats[cIdx].copyWith(unreadCount: 0);
+          }
+          if (_messagesByChat.containsKey(chatId)) {
+            final list = _messagesByChat[chatId]!;
+            _messagesByChat[chatId] = list.map((m) => m.copyWith(isRead: true)).toList();
+          }
           notifyListeners();
         }
         break;
