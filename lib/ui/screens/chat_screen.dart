@@ -3634,7 +3634,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           child: TextField(
                             controller: _textController,
                             onChanged: _handleTextChange,
-                            contextMenuBuilder: TelegramTextSelectionToolbar.build,
+                            contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
                             style: const TextStyle(
                               fontFamily: AppTheme.fontText,
                               color: Colors.white,

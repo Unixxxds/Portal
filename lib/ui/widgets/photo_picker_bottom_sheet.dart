@@ -563,7 +563,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       alignment: Alignment.centerLeft,
                       child: TextField(
                         controller: _captionController,
-                        contextMenuBuilder: TelegramTextSelectionToolbar.build,
+                        contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
                         style: const TextStyle(
                           fontFamily: AppTheme.fontText,
                           color: Colors.white,

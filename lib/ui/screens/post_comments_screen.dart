@@ -510,7 +510,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                           Expanded(
                             child: TextField(
                               controller: _textController,
-                              contextMenuBuilder: TelegramTextSelectionToolbar.build,
+                              contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
                               onChanged: (_) => setState(() {}),
                               onSubmitted: (_) => _sendComment(),
                               style: const TextStyle(
