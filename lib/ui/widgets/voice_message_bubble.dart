@@ -109,7 +109,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         final map = jsonDecode(jsonStr) as Map<String, dynamic>;
         var url = map['url']?.toString() ?? '';
         if (url.isNotEmpty && !url.startsWith('http')) {
-          url = AppConstants.getFullUrl(url);
+          url = AppConstants.formatMediaUrl(url);
         }
         _audioUrl = url;
         _declaredDurationSec = (map['duration'] is int)
@@ -374,3 +374,4 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     );
   }
 }
+

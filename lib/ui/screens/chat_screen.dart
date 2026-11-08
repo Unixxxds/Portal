@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -1980,6 +1981,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
     if (msg.text.trim().startsWith('[PORTAL_PHOTO]:')) {
       return _buildPortalPhotoBubble(msg, isMe);
+    }
+    if (msg.text.trim().startsWith('[PORTAL_VOICE]:')) {
+      return VoiceMessageBubble(
+        message: msg,
+        isMe: isMe,
+        onLongPress: () => _showMessageContextMenu(msg),
+      );
     }
 
     return Align(

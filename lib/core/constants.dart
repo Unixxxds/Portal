@@ -18,5 +18,7 @@ class AppConstants {
     final cleanPath = path.startsWith('/') ? path : '/$path';
     return '$baseUrl$cleanPath';
   }
+
+  static String getFullUrl(String? path) => formatMediaUrl(path);
 }
 
