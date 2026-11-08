@@ -55,6 +55,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _canPostToChannel = false;
   bool _isSendingSticker = false;
   final Set<int> _viewedMessageIds = {};
+  int _lastRenderedMessageCount = 0;
+  bool _hasInitiallyScrolled = false;
 
   // Voice recording state
   final AudioRecorder _audioRecorder = AudioRecorder();
@@ -135,10 +137,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }).catchError((_) {});
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatProvider>().openChat(widget.chat.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _checkUserPresence();
-      _scrollToBottom();
+      await context.read<ChatProvider>().openChat(widget.chat.id);
+      _jumpToBottomFast();
+      Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
+      Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
+      Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
     });
   }
 
@@ -187,6 +192,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _rippleController.dispose();
     _blinkController.dispose();
     super.dispose();
+  }
+
+  void _jumpToBottomFast() {
+    if (!mounted || !_scrollController.hasClients) return;
+    try {
+      final max = _scrollController.position.maxScrollExtent;
+      if (_scrollController.offset < max - 2) {
+        _scrollController.jumpTo(max);
+      }
+    } catch (_) {}
   }
 
   void _scrollToBottom() {
@@ -490,6 +505,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final chatProvider = context.watch<ChatProvider>();
     final currentUserId = auth.currentUser?.id ?? 0;
     final messages = chatProvider.activeMessages;
+
+    if (messages.isNotEmpty) {
+      if (!_hasInitiallyScrolled || _lastRenderedMessageCount != messages.length) {
+        final wasInitial = !_hasInitiallyScrolled;
+        _hasInitiallyScrolled = true;
+        _lastRenderedMessageCount = messages.length;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _jumpToBottomFast();
+          if (wasInitial) {
+            Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
+            Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
+            Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
+          }
+        });
+      }
+    }
+
     final isTyping = chatProvider.isUserTyping(widget.chat.id);
     final currentChat = chatProvider.chats.firstWhere(
       (c) => c.id == widget.chat.id,

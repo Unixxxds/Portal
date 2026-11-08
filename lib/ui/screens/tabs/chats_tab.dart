@@ -23,15 +23,31 @@ class ChatsTab extends StatefulWidget {
   State<ChatsTab> createState() => _ChatsTabState();
 }
 
-class _ChatsTabState extends State<ChatsTab> {
+class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   Timer? _debounceTimer;
   bool _isSearching = false;
   List<Map<String, dynamic>> _remoteResults = [];
 
+  late final AnimationController _shimmerController;
+  late final Animation<double> _shimmerAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _shimmerAnimation = Tween<double>(begin: 0.25, end: 0.85).animate(
+      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut),
+    );
+  }
+
   @override
   void dispose() {
+    _shimmerController.dispose();
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -700,30 +716,114 @@ class _ChatsTabState extends State<ChatsTab> {
                           auth.setCurrentUser(u);
                         });
                       },
-                      child: filteredChats.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'Нет активных чатов',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 95, top: 2),
-                              itemCount: filteredChats.length,
-                              itemBuilder: (context, index) {
-                                final chat = filteredChats[index];
-                                return _buildChatItem(context, chat);
-                              },
-                            ),
+                      child: (chatProvider.isLoading || (chatProvider.chats.isEmpty && chatProvider.isSyncing))
+                          ? _buildChatsSkeleton()
+                          : (filteredChats.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'Нет активных чатов',
+                                    style: TextStyle(
+                                      fontFamily: AppTheme.fontText,
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: const EdgeInsets.only(bottom: 95, top: 2),
+                                  itemCount: filteredChats.length,
+                                  itemBuilder: (context, index) {
+                                    final chat = filteredChats[index];
+                                    return _buildChatItem(context, chat);
+                                  },
+                                )),
                     ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChatsSkeleton() {
+    return AnimatedBuilder(
+      animation: _shimmerAnimation,
+      builder: (context, child) {
+        final shimmerColor = Colors.white.withOpacity(_shimmerAnimation.value * 0.12);
+        final baseShimmer = Colors.white.withOpacity(_shimmerAnimation.value * 0.08);
+
+        return ListView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 95, top: 2),
+          itemCount: 8,
+          itemBuilder: (context, index) {
+            final titleWidths = [140.0, 110.0, 160.0, 130.0, 175.0, 120.0, 150.0, 135.0];
+            final previewWidths = [210.0, 170.0, 240.0, 185.0, 220.0, 160.0, 230.0, 190.0];
+            final tw = titleWidths[index % titleWidths.length];
+            final pw = previewWidths[index % previewWidths.length];
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  // Circular Avatar Skeleton
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: shimmerColor,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+
+                  // Texts Skeleton
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title row
+                        Row(
+                          children: [
+                            Container(
+                              width: tw,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: shimmerColor,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              width: 36,
+                              height: 11,
+                              decoration: BoxDecoration(
+                                color: baseShimmer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Subtitle / last message preview
+                        Container(
+                          width: pw,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: baseShimmer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
