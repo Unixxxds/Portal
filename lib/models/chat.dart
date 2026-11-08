@@ -90,6 +90,9 @@ class Chat {
 
   String get displayLastMessage {
     final text = lastMessageText.trim();
+    if (text.startsWith('[PORTAL_STICKER]:') || text.contains('[PORTAL_STICKER]:')) {
+      return '✨ Стикер';
+    }
     if (text.startsWith('[PORTAL_GIFT]:') ||
         text.contains('[PORTAL_GIFT]:') ||
         (text.startsWith('{') && text.contains('"type":"gift_card"'))) {

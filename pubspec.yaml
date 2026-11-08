@@ -68,6 +68,7 @@ flutter:
   assets:
     - assets/images/
     - lib/assets/
+    - lib/assets/sticker/
     - lib/assets/gifts/
     - lib/assets/gifts/cars/
     - lib/assets/gifts/gargona/

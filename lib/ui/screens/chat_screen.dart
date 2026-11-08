@@ -48,6 +48,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool? _liveIsPremium;
   int? _channelOwnerId;
   bool _canPostToChannel = false;
+  bool _isSendingSticker = false;
   final Set<int> _viewedMessageIds = {};
 
   @override
@@ -217,6 +218,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
+  Future<void> _sendGreetingSticker() async {
+    if (_isSendingSticker) return;
+    _isSendingSticker = true;
+    final provider = context.read<ChatProvider>();
+    const payload = '[PORTAL_STICKER]:{"asset":"lib/assets/sticker/sticker.gif"}';
+    try {
+      await provider.sendMessage(widget.chat.id, payload);
+      _scrollToBottom();
+    } catch (_) {} finally {
+      if (mounted) {
+        _isSendingSticker = false;
+      }
+    }
+  }
+
   void _scrollToMessage(int messageId) {
     final chatProvider = context.read<ChatProvider>();
     final messages = chatProvider.activeMessages;
@@ -311,45 +327,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? Padding(
                           padding: EdgeInsets.only(top: contentTopPadding),
                           child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AvatarWidget(
-                                  avatarUrl: widget.chat.avatar,
-                                  title: widget.chat.title,
-                                  size: 68,
-                                  isSaved: widget.chat.isSaved,
-                                  isChannel: widget.chat.isChannel,
-                                ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  widget.chat.isChannel && !widget.chat.title.startsWith('📢')
-                                      ? '📢 ${widget.chat.title}'
-                                      : widget.chat.title,
-                                  style: const TextStyle(
-                                    fontFamily: AppTheme.fontDisplay,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  widget.chat.isChannel
-                                      ? 'В этом канале пока нет постов'
-                                      : (widget.chat.isSaved
-                                          ? 'Ваше личное хранилище заметок и файлов'
-                                          : 'Нет сообщений.\nНапишите первое!'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    fontSize: 13.5,
-                                    color: AppTheme.textSecondary,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
+                            child: _buildEmptyChatPlaceholder(),
                           ),
                         )
                       : ListView.builder(
@@ -416,6 +394,153 @@ class _ChatScreenState extends State<ChatScreen> {
         (t.startsWith('{') && t.contains('"type":"gift_card"'));
   }
 
+  Widget _buildEmptyChatPlaceholder() {
+    if (widget.chat.isChannel) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AvatarWidget(
+            avatarUrl: widget.chat.avatar,
+            title: widget.chat.title,
+            size: 68,
+            isChannel: true,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            !widget.chat.title.startsWith('📢')
+                ? '📢 ${widget.chat.title}'
+                : widget.chat.title,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontDisplay,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'В этом канале пока нет постов',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              fontSize: 13.5,
+              color: AppTheme.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (widget.chat.isSaved) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AvatarWidget(
+            avatarUrl: widget.chat.avatar,
+            title: widget.chat.title,
+            size: 68,
+            isSaved: true,
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Избранное',
+            style: const TextStyle(
+              fontFamily: AppTheme.fontDisplay,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Ваше личное хранилище заметок и файлов',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              fontSize: 13.5,
+              color: AppTheme.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Direct User Dialogue Greeting Card (1:1 with Screenshot)
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+              constraints: const BoxConstraints(maxWidth: 320),
+              decoration: BoxDecoration(
+                color: const Color(0x3312151D),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(
+                  color: const Color(0x1AFFFFFF),
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.25),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Здесь пока ничего нет...',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Отправьте сообщение или\nнажмите на приветствие ниже.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFC0C0C0),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  GestureDetector(
+                    onTap: _sendGreetingSticker,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Image.asset(
+                        'lib/assets/sticker/sticker.gif',
+                        width: 140,
+                        height: 140,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ===========================================================================
   // PINNED MESSAGE FLOATING BAR
   // ===========================================================================
@@ -423,6 +548,8 @@ class _ChatScreenState extends State<ChatScreen> {
     String textPreview = pinned.text;
     if (_isGiftMessage(textPreview)) {
       textPreview = '🎁 Подарок';
+    } else if (textPreview.startsWith('[PORTAL_STICKER]:') || textPreview.contains('[PORTAL_STICKER]:')) {
+      textPreview = '✨ Стикер';
     } else if (textPreview.startsWith('[PORTAL_PHOTO]:')) {
       textPreview = '📷 Фотография';
     }
@@ -1672,6 +1799,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isGiftMessage(msg.text)) {
       return _buildPortalGiftBubble(msg, isMe);
     }
+    if (msg.text.trim().startsWith('[PORTAL_STICKER]:') || msg.text.contains('[PORTAL_STICKER]:')) {
+      return _buildPortalStickerBubble(msg, isMe);
+    }
     if (msg.text.trim().startsWith('[PORTAL_PHOTO]:')) {
       return _buildPortalPhotoBubble(msg, isMe);
     }
@@ -1802,6 +1932,8 @@ class _ChatScreenState extends State<ChatScreen> {
     String previewText = targetMsg?.text ?? 'Сообщение #$replyToId';
     if (_isGiftMessage(previewText)) {
       previewText = '🎁 Подарок';
+    } else if (previewText.startsWith('[PORTAL_STICKER]:') || previewText.contains('[PORTAL_STICKER]:')) {
+      previewText = '✨ Стикер';
     } else if (previewText.startsWith('[PORTAL_PHOTO]:')) {
       previewText = '📷 Фотография';
     }
@@ -2061,6 +2193,83 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {
       return 'Сегодня';
     }
+  }
+
+  // ===========================================================================
+  // PORTAL STICKER BUBBLE (Transparent Animated Sticker)
+  // ===========================================================================
+  Widget _buildPortalStickerBubble(Message msg, bool isMe) {
+    String assetPath = 'lib/assets/sticker/sticker.gif';
+    try {
+      final raw = msg.text.trim();
+      final startIdx = raw.indexOf('{');
+      final endIdx = raw.lastIndexOf('}');
+      if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+        final jsonStr = raw.substring(startIdx, endIdx + 1);
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        if (map['asset'] != null && map['asset'].toString().isNotEmpty) {
+          assetPath = map['asset'].toString();
+        }
+      }
+    } catch (_) {}
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onLongPress: () => _showMessageContextMenu(msg),
+        onSecondaryTap: () => _showMessageContextMenu(msg),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Stack(
+            alignment: isMe ? Alignment.bottomRight : Alignment.bottomLeft,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(4),
+                child: Image.asset(
+                  assetPath,
+                  width: 140,
+                  height: 140,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              Positioned(
+                bottom: 6,
+                right: isMe ? 6 : null,
+                left: isMe ? null : 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatMessageTime(msg.createdAt),
+                        style: const TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          fontSize: 11,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (isMe) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          msg.isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                          size: 13,
+                          color: msg.isRead ? const Color(0xFF3B98FF) : Colors.white70,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -2777,6 +2986,8 @@ class _ChatScreenState extends State<ChatScreen> {
     String previewText = _editingMessage!.text;
     if (_isGiftMessage(previewText)) {
       previewText = '🎁 Подарок';
+    } else if (previewText.startsWith('[PORTAL_STICKER]:') || previewText.contains('[PORTAL_STICKER]:')) {
+      previewText = '✨ Стикер';
     } else if (previewText.startsWith('[PORTAL_PHOTO]:')) {
       previewText = '📷 Фотография';
     }
@@ -2882,6 +3093,8 @@ class _ChatScreenState extends State<ChatScreen> {
     String previewText = _replyingToMessage!.text;
     if (_isGiftMessage(previewText)) {
       previewText = '🎁 Подарок';
+    } else if (previewText.startsWith('[PORTAL_STICKER]:') || previewText.contains('[PORTAL_STICKER]:')) {
+      previewText = '✨ Стикер';
     } else if (previewText.startsWith('[PORTAL_PHOTO]:')) {
       previewText = '📷 Фотография';
     }
