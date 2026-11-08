@@ -1,73 +1,59 @@
 name: Build iOS IPA
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - 'v*'
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build iOS IPA
-    runs-on: macos-13
-    timeout-minutes: 60
+  build-ios:
+    runs-on: macos-14
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Select Xcode 16
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode_16.2.app || true
+          xcodebuild -version
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.24.5'
           channel: 'stable'
           cache: true
 
-      - name: Verify Flutter & Environment
+      - name: Prepare Flutter and Dependencies
         run: |
-          flutter --version
-          xcodebuild -version
+          flutter config --no-enable-swift-package-manager
+          flutter precache --ios
+          flutter pub get
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Install CocoaPods
-        run: |
-          cd ios
-          pod install --repo-update
-          cd ..
-
-      - name: Build iOS (Release, No CodeSign)
+      - name: Build iOS Runner (Release, No Codesign)
         run: |
           flutter build ios --release --no-codesign
 
-      - name: Package IPA
+      - name: Package into Sideloadable IPA
         run: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r -y portal.ipa Payload
-          echo "IPA package created successfully:"
-          ls -lh portal.ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r -y Portal.ipa Payload
+          cd ../../..
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: portal-ios-ipa
-          path: portal.ipa
+          name: Portal-iOS-IPA
+          path: build/ios/ipa/Portal.ipa
           retention-days: 14
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: portal.ipa
-          generate_release_notes: true
-
