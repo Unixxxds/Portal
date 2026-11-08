@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import '../../core/constants.dart';
@@ -33,12 +34,14 @@ class VoiceMessageBubble extends StatefulWidget {
   final Message message;
   final bool isMe;
   final VoidCallback? onLongPress;
+  final VoidCallback? onCancel;
 
   const VoiceMessageBubble({
     super.key,
     required this.message,
     required this.isMe,
     this.onLongPress,
+    this.onCancel,
   });
 
   @override
@@ -99,6 +102,15 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     });
   }
 
+  @override
+  void didUpdateWidget(covariant VoiceMessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.text != widget.message.text ||
+        oldWidget.message.isPending != widget.message.isPending) {
+      _parsePayload();
+    }
+  }
+
   void _parsePayload() {
     final text = widget.message.text.trim();
     try {
@@ -107,11 +119,16 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
       if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
         final jsonStr = text.substring(startIdx, endIdx + 1);
         final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final localPath = map['localPath']?.toString() ?? '';
         var url = map['url']?.toString() ?? '';
-        if (url.isNotEmpty && !url.startsWith('http')) {
-          url = AppConstants.formatMediaUrl(url);
+        if (localPath.isNotEmpty && File(localPath).existsSync()) {
+          _audioUrl = localPath;
+        } else if (url.isNotEmpty) {
+          if (!url.startsWith('http') && !File(url).existsSync()) {
+            url = AppConstants.formatMediaUrl(url);
+          }
+          _audioUrl = url;
         }
-        _audioUrl = url;
         _declaredDurationSec = (map['duration'] is int)
             ? map['duration'] as int
             : (int.tryParse(map['duration']?.toString() ?? '') ?? 0);
@@ -148,7 +165,11 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         if (_position > Duration.zero && _position < _duration) {
           await _player.resume();
         } else {
-          await _player.play(UrlSource(_audioUrl));
+          if (_audioUrl.startsWith('http://') || _audioUrl.startsWith('https://')) {
+            await _player.play(UrlSource(_audioUrl));
+          } else {
+            await _player.play(DeviceFileSource(_audioUrl));
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -240,14 +261,18 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Play / Pause Circle Button
+                  // Play / Pause Circle Button or Uploading Spinner
                   GestureDetector(
-                    onTap: _togglePlay,
+                    onTap: widget.message.isPending
+                        ? widget.onCancel
+                        : _togglePlay,
                     child: Container(
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: widget.message.isPending
+                            ? (isMe ? const Color(0xFF383838) : const Color(0xFF262626))
+                            : Colors.white,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
@@ -258,20 +283,39 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                         ],
                       ),
                       child: Center(
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.black,
-                                ),
+                        child: widget.message.isPending
+                            ? const Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 38,
+                                    height: 38,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white,
+                                    size: 19,
+                                  ),
+                                ],
                               )
-                            : Icon(
-                                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                color: Colors.black,
-                                size: 26,
-                              ),
+                            : (_isLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.black,
+                                    ),
+                                  )
+                                : Icon(
+                                    _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                    color: Colors.black,
+                                    size: 26,
+                                  )),
                       ),
                     ),
                   ),

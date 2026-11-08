@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
@@ -412,6 +413,175 @@ class ChatProvider with ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  void cancelPendingMessage(int chatId, int messageId) {
+    final list = _messagesByChat[chatId];
+    if (list != null) {
+      list.removeWhere((m) => m.id == messageId);
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendPhotoMessage(
+    int chatId, {
+    required List<File> files,
+    required String caption,
+    int? replyToMessageId,
+  }) async {
+    if (files.isEmpty) return;
+
+    final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final nowIso = DateTime.now().toIso8601String();
+
+    final localPaths = files.map((f) => f.path).toList();
+    final optimisticPayload = '[PORTAL_PHOTO]:' +
+        jsonEncode({
+          'url': localPaths.first,
+          'urls': localPaths,
+          'caption': caption,
+        });
+
+    final optimisticMsg = Message(
+      id: tempId,
+      chatId: chatId,
+      senderId: currentUserId,
+      text: optimisticPayload,
+      replyToMessageId: replyToMessageId,
+      createdAt: nowIso,
+      isRead: false,
+      isPending: true,
+    );
+
+    if (!_messagesByChat.containsKey(chatId)) {
+      _messagesByChat[chatId] = [];
+    }
+    _messagesByChat[chatId]!.add(optimisticMsg);
+    _updateChatPreview(chatId, '📷 Фотография', nowIso);
+    notifyListeners();
+
+    try {
+      final List<String> uploadedUrls = [];
+      for (final file in files) {
+        final uploadedUrl = await ApiService.instance.uploadPhoto(file);
+        if (uploadedUrl.isNotEmpty) {
+          uploadedUrls.add(uploadedUrl);
+        }
+      }
+
+      if (uploadedUrls.isEmpty) throw Exception('Не удалось загрузить фотографии');
+
+      final serverPayload = '[PORTAL_PHOTO]:' +
+          jsonEncode({
+            'url': uploadedUrls.first,
+            'urls': uploadedUrls,
+            'caption': caption,
+          });
+
+      final res = await ApiService.instance.sendMessage(
+        chatId,
+        serverPayload,
+        replyToMessageId: replyToMessageId,
+      );
+
+      if (res['success'] == true && res['message'] != null) {
+        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>);
+        final list = _messagesByChat[chatId];
+        if (list != null) {
+          final idx = list.indexWhere((m) => m.id == tempId);
+          if (idx != -1) {
+            list[idx] = serverMsg;
+          }
+        }
+        await DatabaseHelper.instance.insertMessage(serverMsg);
+      }
+    } catch (e) {
+      debugPrint('Failed to send photo message: $e');
+      final list = _messagesByChat[chatId];
+      if (list != null) {
+        final idx = list.indexWhere((m) => m.id == tempId);
+        if (idx != -1) {
+          list[idx] = list[idx].copyWith(isPending: false);
+        }
+      }
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendVoiceMessage(
+    int chatId, {
+    required File voiceFile,
+    required int durationSec,
+    int? replyToMessageId,
+  }) async {
+    final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final nowIso = DateTime.now().toIso8601String();
+
+    final optimisticPayload = '[PORTAL_VOICE]:' +
+        jsonEncode({
+          'url': voiceFile.path,
+          'localPath': voiceFile.path,
+          'duration': durationSec,
+        });
+
+    final optimisticMsg = Message(
+      id: tempId,
+      chatId: chatId,
+      senderId: currentUserId,
+      text: optimisticPayload,
+      replyToMessageId: replyToMessageId,
+      createdAt: nowIso,
+      isRead: false,
+      isPending: true,
+    );
+
+    if (!_messagesByChat.containsKey(chatId)) {
+      _messagesByChat[chatId] = [];
+    }
+    _messagesByChat[chatId]!.add(optimisticMsg);
+    _updateChatPreview(chatId, '🎤 Голосовое сообщение', nowIso);
+    notifyListeners();
+
+    try {
+      final uploadedUrl = await ApiService.instance.uploadVoice(voiceFile);
+      final serverPayload = '[PORTAL_VOICE]:' +
+          jsonEncode({
+            'url': uploadedUrl,
+            'duration': durationSec,
+          });
+
+      final res = await ApiService.instance.sendMessage(
+        chatId,
+        serverPayload,
+        replyToMessageId: replyToMessageId,
+      );
+
+      if (res['success'] == true && res['message'] != null) {
+        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>);
+        final list = _messagesByChat[chatId];
+        if (list != null) {
+          final idx = list.indexWhere((m) => m.id == tempId);
+          if (idx != -1) {
+            list[idx] = serverMsg;
+          }
+        }
+        await DatabaseHelper.instance.insertMessage(serverMsg);
+      }
+    } catch (e) {
+      debugPrint('Failed to send voice message: $e');
+      final list = _messagesByChat[chatId];
+      if (list != null) {
+        final idx = list.indexWhere((m) => m.id == tempId);
+        if (idx != -1) {
+          list[idx] = list[idx].copyWith(isPending: false);
+        }
+      }
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<void> addOrUpdateChat(Chat chat) async {

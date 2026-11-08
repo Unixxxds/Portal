@@ -402,22 +402,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
 
       final file = File(targetPath);
-      final voiceUrl = await ApiService.instance.uploadVoice(file);
       final durationSec = (elapsed / 1000).round().clamp(1, 9999);
-      final payload = '[PORTAL_VOICE]:' +
-          jsonEncode({
-            'url': voiceUrl,
-            'duration': durationSec,
-          });
+      final replyId = _replyingToMessage?.id;
 
       if (mounted) {
-        final provider = context.read<ChatProvider>();
-        await provider.sendMessage(
-          widget.chat.id,
-          payload,
-          replyToMessageId: _replyingToMessage?.id,
-        );
+        setState(() {
+          _replyingToMessage = null;
+        });
         _scrollToBottom();
+        final provider = context.read<ChatProvider>();
+        provider.sendVoiceMessage(
+          widget.chat.id,
+          voiceFile: file,
+          durationSec: durationSec,
+          replyToMessageId: replyId,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -2016,6 +2015,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         message: msg,
         isMe: isMe,
         onLongPress: () => _showMessageContextMenu(msg),
+        onCancel: msg.isPending
+            ? () => context.read<ChatProvider>().cancelPendingMessage(widget.chat.id, msg.id)
+            : null,
       );
     }
 
@@ -2505,8 +2507,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       caption = map['caption']?.toString() ?? '';
     } catch (_) {}
 
-    final List<String> fullUrls =
-        rawUrls.map((u) => AppConstants.formatMediaUrl(u)).toList();
+    final List<String> fullUrls = rawUrls.map((u) {
+      if (File(u).existsSync()) return u;
+      return AppConstants.formatMediaUrl(u);
+    }).toList();
     final double bubbleWidth =
         (MediaQuery.of(context).size.width * 0.78).clamp(240.0, 310.0);
 
@@ -2548,6 +2552,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     fullUrls,
                     bubbleWidth,
                     caption.isEmpty ? _buildFloatingTimestamp(msg, isMe) : null,
+                    isPending: msg.isPending,
+                    onCancel: msg.isPending
+                        ? () => context.read<ChatProvider>().cancelPendingMessage(widget.chat.id, msg.id)
+                        : null,
                   ),
                 ),
               if (caption.isNotEmpty)
@@ -2653,7 +2661,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // Smart Collage Builder (1, 2, 3, 4, 5+ photos)
-  Widget _buildCollage(List<String> urls, double width, Widget? timestampOverlay) {
+  Widget _buildCollage(
+    List<String> urls,
+    double width,
+    Widget? timestampOverlay, {
+    bool isPending = false,
+    VoidCallback? onCancel,
+  }) {
     const double gap = 2.5;
     final int count = urls.length;
 
@@ -2661,7 +2675,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return Container(
         width: double.infinity,
         constraints: const BoxConstraints(maxHeight: 260),
-        child: _buildCollageTile(urls, 0, 240, isBottomRight: true, timestampOverlay: timestampOverlay),
+        child: _buildCollageTile(
+          urls,
+          0,
+          240,
+          isBottomRight: true,
+          timestampOverlay: timestampOverlay,
+          isPending: isPending,
+          onCancel: onCancel,
+        ),
       );
     }
 
@@ -2672,7 +2694,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         height: h,
         child: Row(
           children: [
-            Expanded(child: _buildCollageTile(urls, 0, h)),
+            Expanded(
+              child: _buildCollageTile(
+                urls,
+                0,
+                h,
+                isPending: isPending,
+                onCancel: onCancel,
+              ),
+            ),
             const SizedBox(width: gap),
             Expanded(
               child: _buildCollageTile(
@@ -2681,6 +2711,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 h,
                 isBottomRight: true,
                 timestampOverlay: timestampOverlay,
+                isPending: isPending,
+                onCancel: onCancel,
               ),
             ),
           ],
@@ -2699,9 +2731,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               height: topH,
               child: Row(
                 children: [
-                  Expanded(child: _buildCollageTile(urls, 0, topH)),
+                  Expanded(
+                    child: _buildCollageTile(
+                      urls,
+                      0,
+                      topH,
+                      isPending: isPending,
+                      onCancel: onCancel,
+                    ),
+                  ),
                   const SizedBox(width: gap),
-                  Expanded(child: _buildCollageTile(urls, 1, topH)),
+                  Expanded(
+                    child: _buildCollageTile(
+                      urls,
+                      1,
+                      topH,
+                      isPending: isPending,
+                      onCancel: onCancel,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2717,6 +2765,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       botH,
                       isBottomRight: true,
                       timestampOverlay: timestampOverlay,
+                      isPending: isPending,
+                      onCancel: onCancel,
                     ),
                   ),
                 ],
@@ -2737,9 +2787,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               height: rowH,
               child: Row(
                 children: [
-                  Expanded(child: _buildCollageTile(urls, 0, rowH)),
+                  Expanded(
+                    child: _buildCollageTile(
+                      urls,
+                      0,
+                      rowH,
+                      isPending: isPending,
+                      onCancel: onCancel,
+                    ),
+                  ),
                   const SizedBox(width: gap),
-                  Expanded(child: _buildCollageTile(urls, 1, rowH)),
+                  Expanded(
+                    child: _buildCollageTile(
+                      urls,
+                      1,
+                      rowH,
+                      isPending: isPending,
+                      onCancel: onCancel,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2748,7 +2814,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               height: rowH,
               child: Row(
                 children: [
-                  Expanded(child: _buildCollageTile(urls, 2, rowH)),
+                  Expanded(
+                    child: _buildCollageTile(
+                      urls,
+                      2,
+                      rowH,
+                      isPending: isPending,
+                      onCancel: onCancel,
+                    ),
+                  ),
                   const SizedBox(width: gap),
                   Expanded(
                     child: _buildCollageTile(
@@ -2757,6 +2831,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       rowH,
                       isBottomRight: true,
                       timestampOverlay: timestampOverlay,
+                      isPending: isPending,
+                      onCancel: onCancel,
                     ),
                   ),
                 ],
@@ -2779,9 +2855,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             height: topH,
             child: Row(
               children: [
-                Expanded(child: _buildCollageTile(urls, 0, topH)),
+                Expanded(
+                  child: _buildCollageTile(
+                    urls,
+                    0,
+                    topH,
+                    isPending: isPending,
+                    onCancel: onCancel,
+                  ),
+                ),
                 const SizedBox(width: gap),
-                Expanded(child: _buildCollageTile(urls, 1, topH)),
+                Expanded(
+                  child: _buildCollageTile(
+                    urls,
+                    1,
+                    topH,
+                    isPending: isPending,
+                    onCancel: onCancel,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2800,6 +2892,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       botH,
                       isBottomRight: i == count - 1,
                       timestampOverlay: timestampOverlay,
+                      isPending: isPending,
+                      onCancel: onCancel,
                     ),
                   ),
                 ],
@@ -2818,38 +2912,89 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     double height, {
     bool isBottomRight = false,
     Widget? timestampOverlay,
+    bool isPending = false,
+    VoidCallback? onCancel,
   }) {
     final url = urls[index];
+    final isLocalFile = File(url).existsSync();
+
     return Stack(
       fit: StackFit.expand,
       children: [
         GestureDetector(
-          onTap: () => _showFullscreenGallery(urls, index),
-          child: Image.network(
-            url,
-            fit: BoxFit.cover,
-            height: height,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                color: const Color(0xFF222222),
-                child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          onTap: () {
+            if (!isPending) {
+              _showFullscreenGallery(urls, index);
+            }
+          },
+          child: isLocalFile
+              ? Image.file(
+                  File(url),
+                  fit: BoxFit.cover,
+                  height: height,
+                )
+              : Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  height: height,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      color: const Color(0xFF222222),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: const Color(0xFF222222),
+                    child: const Center(
+                      child: Icon(Icons.broken_image_rounded, color: Color(0xFF929292), size: 24),
+                    ),
                   ),
                 ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) => Container(
-              color: const Color(0xFF222222),
-              child: const Center(
-                child: Icon(Icons.broken_image_rounded, color: Color(0xFF929292), size: 24),
+        ),
+
+        // Telegram-style upload indicator in the center of the photo
+        if (isPending)
+          Positioned.fill(
+            child: Center(
+              child: GestureDetector(
+                onTap: onCancel,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                      Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+
         if (isBottomRight && timestampOverlay != null)
           Positioned(
             bottom: 5,
@@ -3714,52 +3859,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _sendSelectedPhotos(List<File> files, String caption) async {
     if (files.isEmpty) return;
     final chatProvider = context.read<ChatProvider>();
+    final replyId = _replyingToMessage?.id;
 
-    try {
-      final List<String> uploadedUrls = [];
-      for (int i = 0; i < files.length; i++) {
-        final file = files[i];
-        final uploadedUrl = await ApiService.instance.uploadPhoto(file);
-        if (uploadedUrl.isNotEmpty) {
-          uploadedUrls.add(uploadedUrl);
-        }
-      }
-
-      if (uploadedUrls.isEmpty) return;
-
-      // Отправляем все фото в одном сообщении (умный коллаж / альбом)
-      final payload = '[PORTAL_PHOTO]:' +
-          jsonEncode({
-            'url': uploadedUrls.first, // Для совместимости с другими клиентами
-            'urls': uploadedUrls,      // Список всех фото
-            'caption': caption,
-          });
-
-      await chatProvider.sendMessage(
-        widget.chat.id,
-        payload,
-        replyToMessageId: _replyingToMessage?.id,
-      );
-
-      if (mounted) {
-        setState(() {
-          _replyingToMessage = null;
-        });
-        _scrollToBottom();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Ошибка отправки фото: $e',
-              style: const TextStyle(fontFamily: AppTheme.fontText, color: Colors.white),
-            ),
-            backgroundColor: const Color(0xFFEF4444),
-          ),
-        );
-      }
+    if (mounted) {
+      setState(() {
+        _replyingToMessage = null;
+      });
+      _scrollToBottom();
     }
+
+    // Sends optimistically right away and uploads in the background!
+    await chatProvider.sendPhotoMessage(
+      widget.chat.id,
+      files: files,
+      caption: caption,
+      replyToMessageId: replyId,
+    );
   }
 
   void _showFullscreenImage(String imageUrl) {
