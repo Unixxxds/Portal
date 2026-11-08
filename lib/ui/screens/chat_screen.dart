@@ -24,6 +24,7 @@ import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/send_gift_modal.dart';
+import '../widgets/telegram_text_selection_toolbar.dart';
 import '../widgets/voice_message_bubble.dart';
 import 'user_profile_screen.dart';
 import 'post_comments_screen.dart';
@@ -3633,6 +3634,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           child: TextField(
                             controller: _textController,
                             onChanged: _handleTextChange,
+                            contextMenuBuilder: TelegramTextSelectionToolbar.build,
                             style: const TextStyle(
                               fontFamily: AppTheme.fontText,
                               color: Colors.white,

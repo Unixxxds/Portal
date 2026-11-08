@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as p;
 import '../theme.dart';
+import 'telegram_text_selection_toolbar.dart';
 
 class PhotoPickerBottomSheet extends StatefulWidget {
   final Function(List<File> files, String caption) onSend;
@@ -562,6 +563,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       alignment: Alignment.centerLeft,
                       child: TextField(
                         controller: _captionController,
+                        contextMenuBuilder: TelegramTextSelectionToolbar.build,
                         style: const TextStyle(
                           fontFamily: AppTheme.fontText,
                           color: Colors.white,

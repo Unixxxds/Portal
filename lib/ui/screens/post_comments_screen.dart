@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
+import '../widgets/telegram_text_selection_toolbar.dart';
 
 class PostCommentsScreen extends StatefulWidget {
   final Chat channel;
@@ -509,6 +510,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                           Expanded(
                             child: TextField(
                               controller: _textController,
+                              contextMenuBuilder: TelegramTextSelectionToolbar.build,
                               onChanged: (_) => setState(() {}),
                               onSubmitted: (_) => _sendComment(),
                               style: const TextStyle(
