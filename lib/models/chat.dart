@@ -90,6 +90,9 @@ class Chat {
 
   String get displayLastMessage {
     final text = lastMessageText.trim();
+    if (text.startsWith('[PORTAL_VOICE]:') || text.contains('[PORTAL_VOICE]:')) {
+      return '🎤 Голосовое сообщение';
+    }
     if (text.startsWith('[PORTAL_STICKER]:') || text.contains('[PORTAL_STICKER]:')) {
       return '✨ Стикер';
     }

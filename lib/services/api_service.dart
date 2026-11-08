@@ -622,6 +622,52 @@ class ApiService {
     throw Exception('Не удалось загрузить изображение');
   }
 
+  // 14.5 Загрузка голосового сообщения на сервер
+  Future<String> uploadVoice(File file) async {
+    final fileName = file.path.split(Platform.pathSeparator).last;
+    try {
+      final formData = FormData.fromMap({
+        'voice': await MultipartFile.fromFile(file.path, filename: fileName),
+      });
+      final res = await _dio.post('/api/upload-voice', data: formData);
+      if (res.data is Map && res.data['url'] != null) {
+        return res.data['url'].toString();
+      }
+    } catch (_) {}
+
+    try {
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(file.path, filename: fileName),
+      });
+      final res = await _dio.post('/api/upload-voice', data: formData);
+      if (res.data is Map && res.data['url'] != null) {
+        return res.data['url'].toString();
+      }
+    } catch (_) {}
+
+    try {
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      });
+      final res = await _dio.post('/api/upload-file', data: formData);
+      if (res.data is Map && res.data['url'] != null) {
+        return res.data['url'].toString();
+      }
+    } catch (_) {}
+
+    try {
+      final formData = FormData.fromMap({
+        'photo': await MultipartFile.fromFile(file.path, filename: fileName),
+      });
+      final res = await _dio.post('/api/upload-photo', data: formData);
+      if (res.data is Map && res.data['url'] != null) {
+        return res.data['url'].toString();
+      }
+    } catch (_) {}
+
+    throw Exception('Не удалось загрузить голосовое сообщение');
+  }
+
   // 15. Загрузка аватарки пользователя
   Future<String> uploadAvatar(File file) async {
     try {

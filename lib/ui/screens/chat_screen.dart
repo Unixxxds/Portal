@@ -23,8 +23,12 @@ import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/send_gift_modal.dart';
+import '../widgets/voice_message_bubble.dart';
 import 'user_profile_screen.dart';
 import 'post_comments_screen.dart';
+import 'package:record/record.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   final Chat chat;
@@ -35,7 +39,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isTypingSent = false;
@@ -51,9 +55,30 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSendingSticker = false;
   final Set<int> _viewedMessageIds = {};
 
+  // Voice recording state
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  bool _isRecordingVoice = false;
+  int _recordElapsedMs = 0;
+  Timer? _recordTimer;
+  double _cancelDragOffset = 0.0;
+  String? _currentRecordingPath;
+  late final AnimationController _rippleController;
+  late final AnimationController _blinkController;
+  late final Animation<double> _blinkAnimation;
+
   @override
   void initState() {
     super.initState();
+    _rippleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+    _blinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(_blinkController);
     _isSubscribed = widget.chat.isSubscribed;
     _subscribersCount = widget.chat.subscribersCount;
     _liveVerification = widget.chat.effectiveVerification;
@@ -156,6 +181,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _textController.dispose();
     _scrollController.dispose();
+    _recordTimer?.cancel();
+    _audioRecorder.dispose();
+    _rippleController.dispose();
+    _blinkController.dispose();
     super.dispose();
   }
 
@@ -231,6 +260,153 @@ class _ChatScreenState extends State<ChatScreen> {
         _isSendingSticker = false;
       }
     }
+  }
+
+  Future<bool> _checkMicrophonePermission() async {
+    if (Platform.isWindows || Platform.isLinux) {
+      return true;
+    }
+    final status = await Permission.microphone.status;
+    if (status.isGranted) return true;
+    final result = await Permission.microphone.request();
+    return result.isGranted;
+  }
+
+  Future<void> _startVoiceRecording() async {
+    if (_isRecordingVoice) return;
+
+    final hasPermission = await _checkMicrophonePermission();
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Для записи голосовых сообщений разрешите доступ к микрофону'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _currentRecordingPath = filePath;
+
+      const recordConfig = RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      );
+
+      await _audioRecorder.start(recordConfig, path: filePath);
+
+      HapticFeedback.mediumImpact();
+
+      setState(() {
+        _isRecordingVoice = true;
+        _recordElapsedMs = 0;
+        _cancelDragOffset = 0.0;
+      });
+
+      _recordTimer?.cancel();
+      _recordTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
+        if (!mounted || !_isRecordingVoice) {
+          timer.cancel();
+          return;
+        }
+        setState(() {
+          _recordElapsedMs += 25;
+        });
+      });
+    } catch (e) {
+      debugPrint('Error starting voice recording: $e');
+    }
+  }
+
+  void _updateVoiceDrag(double dragDx) {
+    if (!_isRecordingVoice) return;
+    setState(() {
+      _cancelDragOffset = dragDx.clamp(-120.0, 0.0);
+    });
+  }
+
+  Future<void> _stopVoiceRecording({required bool send}) async {
+    if (!_isRecordingVoice) return;
+
+    final elapsed = _recordElapsedMs;
+    final isCancelled = !send || _cancelDragOffset < -70;
+
+    _recordTimer?.cancel();
+    _recordTimer = null;
+
+    setState(() {
+      _isRecordingVoice = false;
+      _cancelDragOffset = 0.0;
+      _recordElapsedMs = 0;
+    });
+
+    HapticFeedback.lightImpact();
+
+    try {
+      final path = await _audioRecorder.stop();
+      final targetPath = path ?? _currentRecordingPath;
+
+      if (isCancelled || elapsed < 700 || targetPath == null) {
+        if (targetPath != null) {
+          try {
+            final f = File(targetPath);
+            if (f.existsSync()) f.deleteSync();
+          } catch (_) {}
+        }
+        if (elapsed < 700 && !isCancelled && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Слишком короткое голосовое сообщение'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(milliseconds: 1200),
+            ),
+          );
+        }
+        return;
+      }
+
+      final file = File(targetPath);
+      final voiceUrl = await ApiService.instance.uploadVoice(file);
+      final durationSec = (elapsed / 1000).round().clamp(1, 9999);
+      final payload = '[PORTAL_VOICE]:' +
+          jsonEncode({
+            'url': voiceUrl,
+            'duration': durationSec,
+          });
+
+      if (mounted) {
+        final provider = context.read<ChatProvider>();
+        await provider.sendMessage(
+          widget.chat.id,
+          payload,
+          replyToMessageId: _replyingToMessage?.id,
+        );
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка отправки голосового сообщения: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppTheme.destructive,
+          ),
+        );
+      }
+    }
+  }
+
+  String _formatRecordingTime(int ms) {
+    final m = (ms ~/ 60000).toString().padLeft(2, '0');
+    final s = ((ms % 60000) ~/ 1000).toString().padLeft(2, '0');
+    final cs = ((ms % 1000) ~/ 10).toString().padLeft(2, '0');
+    return '$m:$s:$cs';
   }
 
   void _scrollToMessage(int messageId) {
@@ -3203,126 +3379,267 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Left Circle Button: Plus (+)
-              GestureDetector(
-                onTap: _openPhotoGallerySheet,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF191919),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.add_rounded,
-                      color: Colors.white,
-                      size: 24,
+              if (!_isRecordingVoice) ...[
+                // Left Circle Button: Plus (+)
+                GestureDetector(
+                  onTap: _openPhotoGallerySheet,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.add_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
 
-              // Center Input Pill
-              Expanded(
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.only(left: 18, right: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF191919),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      // Text input field
-                      Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          onChanged: _handleTextChange,
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            color: Colors.white,
-                            fontSize: 15,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: widget.chat.isChannel
-                                ? 'Опубликовать пост...'
-                                : (widget.chat.isSaved ? 'Сохранить заметку...' : 'Написать сообщение...'),
-                            hintStyle: const TextStyle(
+                // Center Input Pill
+                Expanded(
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.only(left: 18, right: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        // Text input field
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            onChanged: _handleTextChange,
+                            style: const TextStyle(
                               fontFamily: AppTheme.fontText,
-                              color: Color(0xFF929292),
+                              color: Colors.white,
                               fontSize: 15,
                             ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                            isDense: true,
-                          ),
-                          onSubmitted: (_) => _handleSend(),
-                        ),
-                      ),
-
-                      // Smiley emoji icon
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(
-                          Icons.sentiment_satisfied_rounded,
-                          color: Color(0xFF929292),
-                          size: 22,
-                        ),
-                        onPressed: () {},
-                      ),
-                      const SizedBox(width: 6),
-
-                      // Circular Arrow Send Button inside pill (White active, black arrow)
-                      GestureDetector(
-                        onTap: hasText ? _handleSend : null,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: hasText ? Colors.white : const Color(0xFF262626),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.arrow_upward_rounded,
-                              color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
-                              size: 19,
+                            decoration: InputDecoration(
+                              hintText: widget.chat.isChannel
+                                  ? 'Опубликовать пост...'
+                                  : (widget.chat.isSaved ? 'Сохранить заметку...' : 'Написать сообщение...'),
+                              hintStyle: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Color(0xFF929292),
+                                fontSize: 15,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              isDense: true,
                             ),
+                            onSubmitted: (_) => _handleSend(),
+                          ),
+                        ),
+
+                        // Smiley emoji icon
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(
+                            Icons.sentiment_satisfied_rounded,
+                            color: Color(0xFF929292),
+                            size: 22,
+                          ),
+                          onPressed: () {},
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Circular Arrow Send Button inside pill (White active, black arrow)
+                        GestureDetector(
+                          onTap: hasText ? _handleSend : null,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: hasText ? Colors.white : const Color(0xFF262626),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.arrow_upward_rounded,
+                                color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
+                                size: 19,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // Recording Indicator Bar (Pulsing Red Dot, Timer, Swipe to cancel)
+                Expanded(
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        FadeTransition(
+                          opacity: _blinkAnimation,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFF3B30),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          _formatRecordingTime(_recordElapsedMs),
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        Transform.translate(
+                          offset: Offset((_cancelDragOffset * 0.4).clamp(-50.0, 0.0), 0),
+                          child: Opacity(
+                            opacity: (1.0 + _cancelDragOffset / 120.0).clamp(0.2, 1.0),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.chevron_left_rounded,
+                                  color: _cancelDragOffset < -70
+                                      ? const Color(0xFFFF453A)
+                                      : const Color(0xFF929292),
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  _cancelDragOffset < -70 ? 'Отпустите для отмены' : 'Смахните для отмены',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 12.5,
+                                    fontWeight: _cancelDragOffset < -70 ? FontWeight.w600 : FontWeight.normal,
+                                    color: _cancelDragOffset < -70
+                                        ? const Color(0xFFFF453A)
+                                        : const Color(0xFF929292),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 10),
+
+              // Right Circle Button: Microphone with Telegram ripple & scale
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPressStart: (_) => _startVoiceRecording(),
+                onLongPressMoveUpdate: (details) {
+                  _updateVoiceDrag(details.offsetFromOrigin.dx);
+                },
+                onLongPressEnd: (_) => _stopVoiceRecording(send: true),
+                onLongPressCancel: () => _stopVoiceRecording(send: false),
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Удерживайте для записи голосового сообщения'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(milliseconds: 1500),
+                    ),
+                  );
+                },
+                child: SizedBox(
+                  width: 58,
+                  height: 58,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Telegram-style ripple waves when recording
+                      if (_isRecordingVoice)
+                        AnimatedBuilder(
+                          animation: _rippleController,
+                          builder: (context, child) {
+                            final v1 = _rippleController.value;
+                            final v2 = (v1 + 0.5) % 1.0;
+                            return Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
+                                  width: 54 + (34 * v1),
+                                  height: 54 + (34 * v1),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity((1.0 - v1) * 0.22),
+                                  ),
+                                ),
+                                Container(
+                                  width: 54 + (34 * v2),
+                                  height: 54 + (34 * v2),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity((1.0 - v2) * 0.22),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+
+                      // Main Mic Circle
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        width: _isRecordingVoice ? 56 : 48,
+                        height: _isRecordingVoice ? 56 : 48,
+                        decoration: BoxDecoration(
+                          color: _isRecordingVoice ? Colors.white : const Color(0xFF191919),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _isRecordingVoice ? Colors.transparent : const Color(0x1AFFFFFF),
+                            width: 1,
+                          ),
+                          boxShadow: _isRecordingVoice
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.white.withOpacity(0.35),
+                                    blurRadius: 18,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons.mic_rounded,
+                            color: _isRecordingVoice ? Colors.black : Colors.white,
+                            size: _isRecordingVoice ? 28 : 22,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // Right Circle Button: Microphone
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF191919),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.mic_none_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Удерживайте для записи голосового сообщения')),
-                    );
-                  },
                 ),
               ),
             ],
