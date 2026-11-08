@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
+import '../widgets/formatted_message_text.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
 
 class PostCommentsScreen extends StatefulWidget {
@@ -620,8 +621,9 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       );
     }
 
-    return Text(
-      text,
+    return FormattedMessageText(
+      text: text,
+      messageId: post.id,
       style: const TextStyle(
         fontFamily: AppTheme.fontText,
         color: Colors.white,
@@ -702,8 +704,9 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                   const SizedBox(height: 4),
 
                   // Comment text
-                  Text(
-                    comment.text,
+                  FormattedMessageText(
+                    text: comment.text,
+                    messageId: comment.id,
                     style: const TextStyle(
                       fontFamily: AppTheme.fontText,
                       color: Colors.white,

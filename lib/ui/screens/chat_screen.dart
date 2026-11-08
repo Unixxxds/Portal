@@ -20,6 +20,7 @@ import '../../services/websocket_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
+import '../widgets/formatted_message_text.dart';
 import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
@@ -2096,14 +2097,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ],
 
               // Message text
-              Text(
-                msg.text,
-                style: const TextStyle(
-                  fontFamily: AppTheme.fontText,
-                  color: Colors.white,
-                  fontSize: 15,
-                  height: 1.35,
-                ),
+              FormattedMessageText(
+                text: msg.text,
+                messageId: msg.id,
               ),
               const SizedBox(height: 4),
 
