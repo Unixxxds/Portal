@@ -267,10 +267,39 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (Platform.isWindows || Platform.isLinux) {
       return true;
     }
-    final status = await Permission.microphone.status;
-    if (status.isGranted) return true;
-    final result = await Permission.microphone.request();
-    return result.isGranted;
+
+    try {
+      // 1. Native recorder permission check (directly invokes AVAudioSession on iOS)
+      final hasRecPerm = await _audioRecorder.hasPermission();
+      if (hasRecPerm) return true;
+    } catch (_) {}
+
+    try {
+      // 2. Permission handler request & check
+      final status = await Permission.microphone.status;
+      if (status.isGranted) return true;
+      final result = await Permission.microphone.request();
+      if (result.isGranted) return true;
+
+      if (result.isPermanentlyDenied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Доступ к микрофону отключен в настройках устройства'),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Настройки',
+                textColor: Colors.white,
+                onPressed: () => openAppSettings(),
+              ),
+            ),
+          );
+        }
+        return false;
+      }
+    } catch (_) {}
+
+    return false;
   }
 
   Future<void> _startVoiceRecording() async {
