@@ -596,6 +596,53 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> togglePinChat(int chatId, bool isPremium) async {
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx == -1) return false;
+
+    final chat = _chats[idx];
+    final willPin = !chat.isPinned;
+
+    if (willPin) {
+      final currentPinnedCount = _chats.where((c) => c.isPinned).length;
+      final maxPins = isPremium ? 10 : 3;
+      if (currentPinnedCount >= maxPins) {
+        return false;
+      }
+    }
+
+    _chats[idx] = chat.copyWith(isPinned: willPin);
+    _sortChats();
+    await DatabaseHelper.instance.updateChatPinned(chatId, willPin);
+    notifyListeners();
+
+    try {
+      await ApiService.instance.togglePinChat(chatId);
+    } catch (_) {}
+
+    return true;
+  }
+
+  Future<void> deleteChat(int chatId) async {
+    _chats.removeWhere((c) => c.id == chatId);
+    _messagesByChat.remove(chatId);
+    _sortChats();
+    notifyListeners();
+
+    await DatabaseHelper.instance.deleteChat(chatId);
+
+    try {
+      await ApiService.instance.deleteChat(chatId);
+    } catch (_) {}
+
+    try {
+      WebSocketService.instance.send({
+        'type': 'delete_chat',
+        'chat_id': chatId,
+      });
+    } catch (_) {}
+  }
+
   void updateMessageViews(int messageId, int viewsCount) {
     bool updated = false;
     for (final entry in _messagesByChat.entries) {
@@ -812,6 +859,20 @@ class ChatProvider with ChangeNotifier {
           } else {
             _pinnedMessages.remove(chatId);
           }
+          notifyListeners();
+        }
+        break;
+
+      case 'chat_deleted':
+      case 'delete_chat':
+        final chatId = event['chat_id'] is int
+            ? event['chat_id'] as int
+            : int.tryParse(event['chat_id']?.toString() ?? '') ??
+                (event['chatId'] is int ? event['chatId'] as int : int.tryParse(event['chatId']?.toString() ?? '') ?? 0);
+        if (chatId > 0) {
+          _chats.removeWhere((c) => c.id == chatId);
+          _messagesByChat.remove(chatId);
+          await DatabaseHelper.instance.deleteChat(chatId);
           notifyListeners();
         }
         break;

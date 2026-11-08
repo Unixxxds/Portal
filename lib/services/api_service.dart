@@ -477,6 +477,28 @@ class ApiService {
     }
   }
 
+  // Удаление чата на сервере
+  Future<bool> deleteChat(int chatId) async {
+    try {
+      final response = await _dio.delete('/api/chats/$chatId');
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('ApiService.deleteChat error: $e');
+      return false;
+    }
+  }
+
+  // Переключение закрепления чата на сервере
+  Future<bool> togglePinChat(int chatId) async {
+    try {
+      final response = await _dio.post('/api/chats/$chatId/pin');
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('ApiService.togglePinChat error: $e');
+      return false;
+    }
+  }
+
   // 12. Получение данных канала
   Future<Map<String, dynamic>?> getChannel(int chatId) async {
     try {

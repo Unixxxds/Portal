@@ -155,6 +155,22 @@ class WebSocketService {
     }
   }
 
+  void send(Map<String, dynamic> data) {
+    if (_isConnected && _channel != null) {
+      try {
+        _channel!.sink.add(jsonEncode(data));
+      } catch (_) {}
+    }
+  }
+
+  void deleteChat(int chatId) {
+    send({
+      'type': 'delete_chat',
+      'chatId': chatId,
+      'chat_id': chatId,
+    });
+  }
+
   void disconnect() {
     _isDisposed = true;
     _pingTimer?.cancel();

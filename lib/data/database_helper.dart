@@ -619,6 +619,32 @@ class DatabaseHelper {
     );
   }
 
+  // Обновление статуса закрепления чата
+  Future<void> updateChatPinned(int chatId, bool isPinned) async {
+    final db = await instance.database;
+    await db.update(
+      'chats',
+      {'is_pinned': isPinned ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [chatId],
+    );
+  }
+
+  // Удаление чата и его сообщений из локальной БД
+  Future<void> deleteChat(int chatId) async {
+    final db = await instance.database;
+    await db.delete(
+      'chats',
+      where: 'id = ?',
+      whereArgs: [chatId],
+    );
+    await db.delete(
+      'messages',
+      where: 'chat_id = ?',
+      whereArgs: [chatId],
+    );
+  }
+
   // Получение данных пользователя
   Future<User?> getUser(int id) async {
     final db = await instance.database;

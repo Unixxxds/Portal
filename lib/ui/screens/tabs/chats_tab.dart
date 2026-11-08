@@ -749,6 +749,7 @@ class _ChatsTabState extends State<ChatsTab> {
               ),
             );
           },
+          onLongPress: () => _showChatContextMenu(context, chat),
           splashColor: const Color(0x0FFFFFFF),
           highlightColor: const Color(0x08FFFFFF),
           child: Padding(
@@ -1021,6 +1022,235 @@ class _ChatsTabState extends State<ChatsTab> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showChatContextMenu(BuildContext context, Chat chat) {
+    final chatProvider = context.read<ChatProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final isPremium = authProvider.currentUser?.isPremium == true;
+    final isPinned = chat.isPinned;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.65),
+      builder: (dialogContext) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 250,
+              decoration: BoxDecoration(
+                color: const Color(0xFF191919),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.6),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 1. Закрепить / Открепить
+                  _buildContextMenuItem(
+                    icon: isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    title: isPinned ? 'Открепить' : 'Закрепить',
+                    onTap: () async {
+                      Navigator.pop(dialogContext);
+                      final success = await chatProvider.togglePinChat(chat.id, isPremium);
+                      if (!success && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              isPremium
+                                  ? 'Можно закрепить не более 10 чатов'
+                                  : 'Бесплатно можно закрепить до 3 чатов. С Portal Premium — до 10 чатов',
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Colors.white,
+                              ),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: const Color(0xFF191919),
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+
+                  // Divider
+                  Container(
+                    height: 1,
+                    color: const Color(0x14FFFFFF),
+                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  ),
+
+                  // 2. Удалить
+                  _buildContextMenuItem(
+                    icon: Icons.delete_outline_rounded,
+                    title: 'Удалить',
+                    isDestructive: true,
+                    onTap: () {
+                      Navigator.pop(dialogContext);
+                      _showDeleteConfirmationDialog(context, chat);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteConfirmationDialog(BuildContext context, Chat chat) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.65),
+      builder: (dialogContext) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 290,
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF191919),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.6),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Удалить чат?',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Чат с «${chat.title}» будет удален для всех участников без возможности восстановления.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      fontSize: 13.5,
+                      color: Color(0xFF929292),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Отмена',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            context.read<ChatProvider>().deleteChat(chat.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Чат удален'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: Duration(milliseconds: 1400),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF453A),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Удалить',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContextMenuItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    final color = isDestructive ? const Color(0xFFFF453A) : Colors.white;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 14),
+            Text(
+              title,
+              style: TextStyle(
+                fontFamily: AppTheme.fontText,
+                color: color,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
