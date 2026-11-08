@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     name: Build iOS IPA
-    runs-on: macos-14
+    runs-on: macos-13
     timeout-minutes: 60
 
     steps:
@@ -70,3 +70,4 @@ jobs:
         with:
           files: portal.ipa
           generate_release_notes: true
+
