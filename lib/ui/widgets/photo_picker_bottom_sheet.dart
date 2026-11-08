@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as p;
 import '../theme.dart';
 
@@ -41,6 +43,7 @@ class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet> {
 
   bool _isLoading = true;
   bool _isSending = false;
+  bool _permissionDenied = false;
 
   @override
   void initState() {
@@ -55,14 +58,50 @@ class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet> {
   }
 
   Future<void> _loadLocalPhotos() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _permissionDenied = false;
+    });
+
     final List<File> discovered = [];
 
-    try {
-      final List<String> searchDirs = [];
+    // 1. Mobile (iOS & Android): Request permission and load photos from device library
+    if (Platform.isIOS || Platform.isAndroid) {
+      try {
+        final PermissionState ps = await PhotoManager.requestPermissionExtend();
+        final hasAccess = ps.isAuth || ps.hasAccess;
 
-      if (Platform.isWindows) {
+        if (hasAccess) {
+          final List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
+            type: RequestType.image,
+            onlyAll: true,
+          );
+          if (albums.isNotEmpty) {
+            final List<AssetEntity> assets = await albums.first.getAssetListPaged(
+              page: 0,
+              size: 50,
+            );
+            final loadedFiles = await Future.wait(assets.map((a) => a.file));
+            for (final f in loadedFiles) {
+              if (f != null && f.existsSync()) {
+                discovered.add(f);
+              }
+            }
+          }
+        } else {
+          _permissionDenied = true;
+        }
+      } catch (e) {
+        debugPrint('Error loading photos with PhotoManager: $e');
+      }
+    }
+
+    // 2. Desktop (Windows) scanning
+    if (Platform.isWindows) {
+      try {
         final userProfile = Platform.environment['USERPROFILE'];
+        final List<String> searchDirs = [];
+
         if (userProfile != null && userProfile.isNotEmpty) {
           searchDirs.add(p.join(userProfile, 'Pictures'));
           searchDirs.add(p.join(userProfile, 'Pictures', 'Screenshots'));
@@ -72,37 +111,36 @@ class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet> {
           searchDirs.add(p.join(userProfile, 'Desktop'));
           searchDirs.add(p.join(userProfile, 'OneDrive', 'Pictures'));
         }
-      }
 
-      final validExts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'};
+        final validExts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'};
 
-      for (final dirPath in searchDirs) {
-        final dir = Directory(dirPath);
-        if (await dir.exists()) {
-          try {
-            final entities = dir.listSync(followLinks: false);
-            for (final entity in entities) {
-              if (entity is File) {
-                final ext = p.extension(entity.path).toLowerCase();
-                if (validExts.contains(ext)) {
-                  discovered.add(entity);
+        for (final dirPath in searchDirs) {
+          final dir = Directory(dirPath);
+          if (await dir.exists()) {
+            try {
+              final entities = dir.listSync(followLinks: false);
+              for (final entity in entities) {
+                if (entity is File) {
+                  final ext = p.extension(entity.path).toLowerCase();
+                  if (validExts.contains(ext)) {
+                    discovered.add(entity);
+                  }
                 }
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
         }
-      }
 
-      // Сортировка: самые свежие фото вверху
-      discovered.sort((a, b) {
-        try {
-          return b.lastModifiedSync().compareTo(a.lastModifiedSync());
-        } catch (_) {
-          return 0;
-        }
-      });
-    } catch (e) {
-      debugPrint('Error scanning local photos: $e');
+        discovered.sort((a, b) {
+          try {
+            return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+          } catch (_) {
+            return 0;
+          }
+        });
+      } catch (e) {
+        debugPrint('Error scanning Windows photos: $e');
+      }
     }
 
     if (mounted) {
@@ -111,6 +149,35 @@ class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet> {
         _galleryFiles.addAll(discovered.take(80));
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _handleBrowseTap() async {
+    try {
+      final picker = ImagePicker();
+      final List<XFile> picked = await picker.pickMultiImage(limit: 5);
+      if (picked.isNotEmpty && mounted) {
+        setState(() {
+          for (final xFile in picked.take(5)) {
+            final file = File(xFile.path);
+            if (!_galleryFiles.any((f) => f.path == file.path)) {
+              _galleryFiles.insert(0, file);
+            }
+            if (!_selectedFiles.any((f) => f.path == file.path)) {
+              if (_selectedFiles.length < 5) {
+                _selectedFiles.add(file);
+              }
+            }
+          }
+        });
+        return;
+      }
+    } catch (e) {
+      debugPrint('ImagePicker error: $e');
+    }
+
+    if (Platform.isWindows) {
+      await _pickFromComputerDialog();
     }
   }
 
@@ -141,11 +208,9 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
           setState(() {
             for (final path in paths) {
               final file = File(path);
-              // Добавляем в галерею на первую позицию если нет
               if (!_galleryFiles.any((f) => f.path == file.path)) {
                 _galleryFiles.insert(0, file);
               }
-              // Выбираем если еще есть место (до 5)
               if (!_selectedFiles.any((f) => f.path == file.path)) {
                 if (_selectedFiles.length < 5) {
                   _selectedFiles.add(file);
@@ -293,12 +358,14 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       mainAxisSpacing: 4,
                       childAspectRatio: 1.0,
                     ),
-                    itemCount: _galleryFiles.length + 1, // +1 для плашки «Обзор»
+                    itemCount: (_permissionDenied && _galleryFiles.isEmpty)
+                        ? 2
+                        : _galleryFiles.length + 1,
                     itemBuilder: (context, index) {
                       if (index == 0) {
-                        // Первой плиткой идет кнопка "Обзор" для выбора с ПК
+                        // Первой плиткой идет кнопка "Обзор" (выбор из системы / файлов)
                         return GestureDetector(
-                          onTap: _pickFromComputerDialog,
+                          onTap: _handleBrowseTap,
                           child: Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFF222222),
@@ -327,6 +394,52 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                                 const SizedBox(height: 8),
                                 const Text(
                                   'Обзор',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (_permissionDenied && _galleryFiles.isEmpty && index == 1) {
+                        return GestureDetector(
+                          onTap: () => PhotoManager.openSetting(),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF222222),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: const Color(0x1AFFFFFF),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.08),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.lock_outline_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Настройки',
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontFamily: AppTheme.fontText,
                                     color: Colors.white,
