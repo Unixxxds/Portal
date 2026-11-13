@@ -546,39 +546,56 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                 ),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // Поле ввода подписи (не обязательно)
+                  // Поле ввода подписи (авто-расширение вверх как в Telegram)
                   Expanded(
-                    child: Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF090909),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0x1AFFFFFF),
-                          width: 1,
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minHeight: 48,
+                          maxHeight: 120,
                         ),
-                      ),
-                      alignment: Alignment.centerLeft,
-                      child: TextField(
-                        controller: _captionController,
-                        contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          color: Colors.white,
-                          fontSize: 14.5,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: 'Добавить подпись...',
-                          hintStyle: TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            color: Color(0xFF929292),
-                            fontSize: 14.5,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF090909),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: const Color(0x1AFFFFFF),
+                            width: 1,
                           ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
+                        ),
+                        child: TextField(
+                          controller: _captionController,
+                          contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.newline,
+                          scrollPhysics: const BouncingScrollPhysics(),
+                          textAlignVertical: TextAlignVertical.center,
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            color: Colors.white,
+                            fontSize: 14.5,
+                            height: 1.35,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Добавить подпись...',
+                            hintStyle: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Color(0xFF929292),
+                              fontSize: 14.5,
+                              height: 1.35,
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 13),
+                          ),
                         ),
                       ),
                     ),

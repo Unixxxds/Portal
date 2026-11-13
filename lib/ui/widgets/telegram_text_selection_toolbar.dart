@@ -84,10 +84,14 @@ class _TelegramTextSelectionToolbarState extends State<TelegramTextSelectionTool
       return '> $l';
     }).join('\n');
 
-    final newText = '$before$quoted$after';
+    final prefixNewline = (before.isNotEmpty && !before.endsWith('\n')) ? '\n' : '';
+    final suffixNewline = (after.isNotEmpty && !after.startsWith('\n')) ? '\n' : '';
+    final newQuoted = '$prefixNewline$quoted$suffixNewline';
+
+    final newText = '$before$newQuoted$after';
     final newSelection = TextSelection(
-      baseOffset: start,
-      extentOffset: start + quoted.length,
+      baseOffset: start + prefixNewline.length,
+      extentOffset: start + prefixNewline.length + quoted.length,
     );
 
     widget.editableTextState.userUpdateTextEditingValue(

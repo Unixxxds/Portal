@@ -96,11 +96,12 @@ class FormattedMessageText extends StatelessWidget {
           height: 1.35,
         );
 
-    if (!text.contains('>') && !text.contains('[QUOTE]')) {
+    final sanitizedText = text.replaceAll('&gt;', '>');
+    if (!sanitizedText.contains('>') && !sanitizedText.contains('[QUOTE]')) {
       return Text(text, style: defaultStyle);
     }
 
-    final lines = text.split('\n');
+    final lines = sanitizedText.split('\n');
     final List<Widget> widgets = [];
     final List<String> currentQuoteLines = [];
     final List<String> currentNormalLines = [];
@@ -117,7 +118,8 @@ class FormattedMessageText extends StatelessWidget {
     void flushQuote() {
       if (currentQuoteLines.isNotEmpty) {
         final quoteText = currentQuoteLines.join('\n');
-        final color = _quotePalette[(messageId.abs() + quoteCounter * 3) % _quotePalette.length];
+        final seed = messageId.abs() != 0 ? messageId.abs() : text.hashCode.abs();
+        final color = _quotePalette[(seed + quoteCounter * 3) % _quotePalette.length];
         quoteCounter++;
         widgets.add(_buildQuoteBlock(quoteText, color));
         currentQuoteLines.clear();
@@ -160,7 +162,7 @@ class FormattedMessageText extends StatelessWidget {
         } else if (clean.startsWith('>')) {
           clean = clean.substring(1).trimLeft();
         }
-        currentQuoteLines.add(clean);
+        currentQuoteLines.add(clean.isEmpty ? ' ' : clean);
       } else {
         flushQuote();
         currentNormalLines.add(line);

@@ -1910,8 +1910,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             if (caption != null && caption.isNotEmpty) const SizedBox(height: 10),
           ],
           if (caption != null && caption.isNotEmpty)
-            Text(
-              caption,
+            FormattedMessageText(
+              text: caption,
+              messageId: msg.id,
               style: const TextStyle(
                 fontFamily: AppTheme.fontText,
                 color: Colors.white,
@@ -1928,8 +1929,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return _buildPortalGiftBubble(msg, false);
     }
 
-    return Text(
-      msg.text,
+    return FormattedMessageText(
+      text: msg.text,
+      messageId: msg.id,
       style: const TextStyle(
         fontFamily: AppTheme.fontText,
         color: Colors.white,
@@ -2650,8 +2652,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        caption,
+                      FormattedMessageText(
+                        text: caption,
+                        messageId: msg.id,
                         style: const TextStyle(
                           fontFamily: AppTheme.fontText,
                           color: Colors.white,
@@ -3692,38 +3695,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         children: [
                           // Text input field
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: TextField(
-                                controller: _textController,
-                                onChanged: _handleTextChange,
-                                contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                                keyboardType: TextInputType.multiline,
-                                textCapitalization: TextCapitalization.sentences,
-                                minLines: 1,
-                                maxLines: 5,
-                                textInputAction: TextInputAction.newline,
-                                scrollPhysics: const BouncingScrollPhysics(),
-                                style: const TextStyle(
+                            child: TextField(
+                              controller: _textController,
+                              onChanged: _handleTextChange,
+                              contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                              keyboardType: TextInputType.multiline,
+                              textCapitalization: TextCapitalization.sentences,
+                              minLines: 1,
+                              maxLines: 5,
+                              textInputAction: TextInputAction.newline,
+                              scrollPhysics: const BouncingScrollPhysics(),
+                              textAlignVertical: TextAlignVertical.center,
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Colors.white,
+                                fontSize: 15,
+                                height: 1.35,
+                              ),
+                              decoration: const InputDecoration(
+                                hintText: 'Сообщение',
+                                hintStyle: TextStyle(
                                   fontFamily: AppTheme.fontText,
-                                  color: Colors.white,
+                                  color: Color(0xFF929292),
                                   fontSize: 15,
                                   height: 1.35,
                                 ),
-                                decoration: InputDecoration(
-                                  hintText: widget.chat.isChannel
-                                      ? 'Опубликовать пост...'
-                                      : (widget.chat.isSaved ? 'Сохранить заметку...' : 'Написать сообщение...'),
-                                  hintStyle: const TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    color: Color(0xFF929292),
-                                    fontSize: 15,
-                                    height: 1.35,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                                  isDense: true,
-                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(vertical: 13),
+                                isDense: true,
                               ),
                             ),
                           ),
