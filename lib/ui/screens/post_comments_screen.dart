@@ -478,72 +478,101 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                 ),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   // Attachment / Paperclip button
-                  IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF929292), size: 24),
-                    onPressed: () {},
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF929292), size: 24),
+                      onPressed: () {},
+                    ),
                   ),
                   const SizedBox(width: 8),
 
                   // Current user avatar preview
-                  AvatarWidget(
-                    size: 28,
-                    avatarUrl: currentUser?.avatar ?? '',
-                    title: currentUser?.displayName ?? 'Я',
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: AvatarWidget(
+                      size: 28,
+                      avatarUrl: currentUser?.avatar ?? '',
+                      title: currentUser?.displayName ?? 'Я',
+                    ),
                   ),
                   const SizedBox(width: 8),
 
                   // Input pill
                   Expanded(
-                    child: Container(
-                      height: 44,
-                      padding: const EdgeInsets.only(left: 14, right: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF191919),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _textController,
-                              contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                              onChanged: (_) => setState(() {}),
-                              onSubmitted: (_) => _sendComment(),
-                              style: const TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                color: Colors.white,
-                                fontSize: 14.5,
-                              ),
-                              decoration: const InputDecoration(
-                                hintText: 'Сообщение...',
-                                hintStyle: TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Color(0xFF929292),
-                                  fontSize: 14.5,
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minHeight: 44,
+                          maxHeight: 130,
+                        ),
+                        padding: const EdgeInsets.only(left: 14, right: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: TextField(
+                                  controller: _textController,
+                                  contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                                  keyboardType: TextInputType.multiline,
+                                  textCapitalization: TextCapitalization.sentences,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  textInputAction: TextInputAction.newline,
+                                  scrollPhysics: const BouncingScrollPhysics(),
+                                  onChanged: (_) => setState(() {}),
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    color: Colors.white,
+                                    fontSize: 14.5,
+                                    height: 1.35,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Сообщение...',
+                                    hintStyle: TextStyle(
+                                      fontFamily: AppTheme.fontText,
+                                      color: Color(0xFF929292),
+                                      fontSize: 14.5,
+                                      height: 1.35,
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                  ),
                                 ),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 10),
                               ),
                             ),
-                          ),
-                          IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(
-                              Icons.sentiment_satisfied_rounded,
-                              color: Color(0xFF929292),
-                              size: 20,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: const Icon(
+                                  Icons.sentiment_satisfied_rounded,
+                                  color: Color(0xFF929292),
+                                  size: 20,
+                                ),
+                                onPressed: () {},
+                              ),
                             ),
-                            onPressed: () {},
-                          ),
-                          const SizedBox(width: 4),
-                        ],
+                            const SizedBox(width: 4),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -551,27 +580,30 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
 
                   // Send button or mic
                   if (hasText)
-                    GestureDetector(
-                      onTap: _isSending ? null : _sendComment,
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF3B98FF),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: _isSending
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(
-                                  Icons.arrow_upward_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: GestureDetector(
+                        onTap: _isSending ? null : _sendComment,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF3B98FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: _isSending
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(
+                                    Icons.arrow_upward_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                          ),
                         ),
                       ),
                     )

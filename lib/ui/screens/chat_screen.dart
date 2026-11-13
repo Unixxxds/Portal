@@ -607,6 +607,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         )
                       : ListView.builder(
                           controller: _scrollController,
+                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: EdgeInsets.only(
                             top: contentTopPadding,
                             bottom: 12,
@@ -3644,7 +3645,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!_isRecordingVoice) ...[
                 // Left Circle Button: Plus (+)
@@ -3669,86 +3670,111 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(width: 10),
 
-                // Center Input Pill
+                // Center Input Pill (Auto-expanding upwards like Telegram)
                 Expanded(
-                  child: Container(
-                    height: 48,
-                    padding: const EdgeInsets.only(left: 18, right: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF191919),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                    ),
-                    child: Row(
-                      children: [
-                        // Text input field
-                        Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            onChanged: _handleTextChange,
-                            contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                            style: const TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              color: Colors.white,
-                              fontSize: 15,
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minHeight: 48,
+                        maxHeight: 135,
+                      ),
+                      padding: const EdgeInsets.only(left: 18, right: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF191919),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // Text input field
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: TextField(
+                                controller: _textController,
+                                onChanged: _handleTextChange,
+                                contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                                keyboardType: TextInputType.multiline,
+                                textCapitalization: TextCapitalization.sentences,
+                                minLines: 1,
+                                maxLines: 5,
+                                textInputAction: TextInputAction.newline,
+                                scrollPhysics: const BouncingScrollPhysics(),
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  height: 1.35,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: widget.chat.isChannel
+                                      ? 'Опубликовать пост...'
+                                      : (widget.chat.isSaved ? 'Сохранить заметку...' : 'Написать сообщение...'),
+                                  hintStyle: const TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    color: Color(0xFF929292),
+                                    fontSize: 15,
+                                    height: 1.35,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                  isDense: true,
+                                ),
+                              ),
                             ),
-                            decoration: InputDecoration(
-                              hintText: widget.chat.isChannel
-                                  ? 'Опубликовать пост...'
-                                  : (widget.chat.isSaved ? 'Сохранить заметку...' : 'Написать сообщение...'),
-                              hintStyle: const TextStyle(
-                                fontFamily: AppTheme.fontText,
+                          ),
+
+                          // Smiley emoji icon
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 13),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: const Icon(
+                                Icons.sentiment_satisfied_rounded,
                                 color: Color(0xFF929292),
-                                fontSize: 15,
+                                size: 22,
                               ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                              isDense: true,
+                              onPressed: () {},
                             ),
-                            onSubmitted: (_) => _handleSend(),
                           ),
-                        ),
+                          const SizedBox(width: 6),
 
-                        // Smiley emoji icon
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(
-                            Icons.sentiment_satisfied_rounded,
-                            color: Color(0xFF929292),
-                            size: 22,
-                          ),
-                          onPressed: () {},
-                        ),
-                        const SizedBox(width: 6),
-
-                        // Circular Arrow Send Button inside pill (White active, black arrow)
-                        GestureDetector(
-                          onTap: hasText ? _handleSend : null,
-                          child: ScaleTransition(
-                            scale: _sendBtnScaleAnim,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: hasText ? Colors.white : const Color(0xFF262626),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: SlideTransition(
-                                  position: _sendBtnArrowSlideAnim,
-                                  child: Icon(
-                                    Icons.arrow_upward_rounded,
-                                    color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
-                                    size: 19,
+                          // Circular Arrow Send Button inside pill (White active, black arrow)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: GestureDetector(
+                              onTap: hasText ? _handleSend : null,
+                              child: ScaleTransition(
+                                scale: _sendBtnScaleAnim,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: hasText ? Colors.white : const Color(0xFF262626),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: SlideTransition(
+                                      position: _sendBtnArrowSlideAnim,
+                                      child: Icon(
+                                        Icons.arrow_upward_rounded,
+                                        color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
+                                        size: 19,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -3844,8 +3870,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   );
                 },
                 child: SizedBox(
-                  width: 58,
-                  height: 58,
+                  width: 48,
+                  height: 48,
                   child: Stack(
                     alignment: Alignment.center,
                     clipBehavior: Clip.none,
@@ -3920,16 +3946,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
         ),
 
-        // iOS Home Indicator
-        Container(
-          width: 134,
-          height: 5,
-          margin: const EdgeInsets.only(top: 2, bottom: 6),
-          decoration: BoxDecoration(
-            color: const Color(0x4DFFFFFF),
-            borderRadius: BorderRadius.circular(100),
+        // iOS Home Indicator (only when keyboard is not visible and screen has bottom padding)
+        if (MediaQuery.of(context).viewInsets.bottom == 0 && MediaQuery.of(context).padding.bottom > 0)
+          Container(
+            width: 134,
+            height: 5,
+            margin: const EdgeInsets.only(top: 2, bottom: 6),
+            decoration: BoxDecoration(
+              color: const Color(0x4DFFFFFF),
+              borderRadius: BorderRadius.circular(100),
+            ),
           ),
-        ),
       ],
     );
   }
