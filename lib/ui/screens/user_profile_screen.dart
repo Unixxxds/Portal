@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -28,16 +27,43 @@ class UserProfileScreen extends StatefulWidget {
   State<UserProfileScreen> createState() => _UserProfileScreenState();
 }
 
-class _UserProfileScreenState extends State<UserProfileScreen> {
+class _UserProfileScreenState extends State<UserProfileScreen> with SingleTickerProviderStateMixin {
   User? _userProfile;
   List<UserGift> _userGifts = [];
   bool _isLoadingGifts = false;
 
+  late final AnimationController _entranceController;
+  late final Animation<double> _contentFadeAnim;
+  late final Animation<Offset> _contentSlideAnim;
+
   @override
   void initState() {
     super.initState();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _contentFadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.18, 1.0, curve: Curves.easeOut),
+    );
+    _contentSlideAnim = Tween<Offset>(
+      begin: const Offset(0.0, 0.07),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.10, 1.0, curve: Curves.easeOutCubic),
+    ));
+    _entranceController.forward();
+
     _loadProfile();
     _loadGifts();
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadGifts({int? targetId}) async {
@@ -340,12 +366,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                                 width: 3.5,
                               ),
                             ),
-                            child: AvatarWidget(
-                              avatarUrl: avatarUrl,
-                              title: displayName,
-                              size: 80,
-                              isOnline: isOnline,
-                              isSaved: chat.isSaved,
+                            child: Hero(
+                              tag: 'user_avatar_${widget.chat.id}',
+                              flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: toHeroContext.widget,
+                                );
+                              },
+                              child: AvatarWidget(
+                                avatarUrl: avatarUrl,
+                                title: displayName,
+                                size: 80,
+                                isOnline: isOnline,
+                                isSaved: chat.isSaved,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -427,11 +462,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              FadeTransition(
+                opacity: _contentFadeAnim,
+                child: SlideTransition(
+                  position: _contentSlideAnim,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20),
 
-              // ===============================================================
-              // ACTION BUTTONS: "Написать" & "Звонок"
-              // ===============================================================
+                      // ===============================================================
+                      // ACTION BUTTONS: "Написать" & "Звонок"
+                      // ===============================================================
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -753,6 +794,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 )
               else if (!_isLoadingGifts)
                 _buildEmptyGifts(),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
 

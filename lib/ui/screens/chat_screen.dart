@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +24,8 @@ import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/send_gift_modal.dart';
+import '../widgets/telegram_message_entrance.dart';
+import '../widgets/telegram_profile_route.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
 import '../widgets/voice_message_bubble.dart';
 import 'user_profile_screen.dart';
@@ -71,9 +72,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final AnimationController _blinkController;
   late final Animation<double> _blinkAnimation;
 
+  // Send button and message entrance animations
+  late final AnimationController _sendBtnAnimController;
+  late final Animation<double> _sendBtnScaleAnim;
+  late final Animation<Offset> _sendBtnArrowSlideAnim;
+  final Set<int> _seenMessageIds = {};
+  bool _isInitialMessagesRecorded = false;
+
   @override
   void initState() {
     super.initState();
+    _sendBtnAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _sendBtnScaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.80), weight: 35),
+      TweenSequenceItem(tween: Tween(begin: 0.80, end: 1.08), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 25),
+    ]).animate(CurvedAnimation(parent: _sendBtnAnimController, curve: Curves.easeInOut));
+
+    _sendBtnArrowSlideAnim = TweenSequence<Offset>([
+      TweenSequenceItem(tween: Tween(begin: Offset.zero, end: const Offset(0.0, -0.35)), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: const Offset(0.0, 0.25), end: Offset.zero), weight: 50),
+    ]).animate(CurvedAnimation(parent: _sendBtnAnimController, curve: Curves.easeInOut));
+
     _rippleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -193,6 +216,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _audioRecorder.dispose();
     _rippleController.dispose();
     _blinkController.dispose();
+    _sendBtnAnimController.dispose();
     super.dispose();
   }
 
@@ -239,6 +263,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _handleSend() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+
+    // Trigger Telegram-style punch animation on send button
+    _sendBtnAnimController.forward(from: 0.0);
+    HapticFeedback.lightImpact();
 
     if (_isTypingSent) {
       _isTypingSent = false;
@@ -507,6 +535,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final chatProvider = context.watch<ChatProvider>();
     final currentUserId = auth.currentUser?.id ?? 0;
     final messages = chatProvider.activeMessages;
+    if (!_isInitialMessagesRecorded) {
+      if (!chatProvider.isLoading || messages.isNotEmpty) {
+        for (final m in messages) {
+          _seenMessageIds.add(m.id);
+        }
+        _isInitialMessagesRecorded = true;
+      }
+    }
 
     if (messages.isNotEmpty) {
       if (!_hasInitiallyScrolled || _lastRenderedMessageCount != messages.length) {
@@ -583,12 +619,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             final prevMsg = index > 0 ? messages[index - 1] : null;
                             final showDate = prevMsg == null || _getDayKey(msg.createdAt) != _getDayKey(prevMsg.createdAt);
 
+                            final isMe = msg.senderId == currentUserId;
                             Widget cardWidget;
                             if (currentChat.isChannel) {
                               cardWidget = _buildChannelPostCard(msg);
                             } else {
-                              final isMe = msg.senderId == currentUserId;
                               cardWidget = _buildMessageBubble(msg, isMe);
+                            }
+
+                            final shouldAnimate = _isInitialMessagesRecorded && !_seenMessageIds.contains(msg.id);
+                            if (shouldAnimate) {
+                              _seenMessageIds.add(msg.id);
+                              cardWidget = TelegramMessageEntrance(
+                                key: ValueKey('entrance_${msg.id}'),
+                                isMe: isMe,
+                                animate: true,
+                                child: cardWidget,
+                              );
                             }
 
                             if (showDate) {
@@ -973,7 +1020,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         } else {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
+                            TelegramProfileRoute(
                               builder: (context) => UserProfileScreen(chat: chat),
                             ),
                           );
@@ -1004,13 +1051,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            AvatarWidget(
-                              avatarUrl: chat.avatar,
-                              title: displayTitle,
-                              size: 36,
-                              isOnline: isOnline,
-                              isSaved: chat.isSaved,
-                              isChannel: chat.isChannel,
+                            Hero(
+                              tag: 'user_avatar_${chat.id}',
+                              flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: toHeroContext.widget,
+                                );
+                              },
+                              child: AvatarWidget(
+                                avatarUrl: chat.avatar,
+                                title: displayTitle,
+                                size: 36,
+                                isOnline: isOnline,
+                                isSaved: chat.isSaved,
+                                isChannel: chat.isChannel,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Flexible(
@@ -1143,7 +1199,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                TelegramProfileRoute(
                                   builder: (context) => UserProfileScreen(chat: chat),
                                 ),
                               );
@@ -3669,19 +3725,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         // Circular Arrow Send Button inside pill (White active, black arrow)
                         GestureDetector(
                           onTap: hasText ? _handleSend : null,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: hasText ? Colors.white : const Color(0xFF262626),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Icon(
-                                Icons.arrow_upward_rounded,
-                                color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
-                                size: 19,
+                          child: ScaleTransition(
+                            scale: _sendBtnScaleAnim,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: hasText ? Colors.white : const Color(0xFF262626),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: SlideTransition(
+                                  position: _sendBtnArrowSlideAnim,
+                                  child: Icon(
+                                    Icons.arrow_upward_rounded,
+                                    color: hasText ? const Color(0xFF090909) : const Color(0xFF929292),
+                                    size: 19,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
