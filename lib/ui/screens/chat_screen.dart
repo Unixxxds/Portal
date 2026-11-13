@@ -3634,339 +3634,337 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // ===========================================================================
-  // FLOATING INPUT BAR (1:1 with Telegram iOS - Screenshot 2)
+  // FLOATING INPUT BAR (No podlozhka, 3 floating widgets)
   // ===========================================================================
   Widget _buildFloatingInputBar() {
     final hasText = _textController.text.trim().isNotEmpty;
     final mediaQuery = MediaQuery.of(context);
     final bottomInset = mediaQuery.viewInsets.bottom;
     final bottomPadding = bottomInset > 0
-        ? 6.0
-        : (mediaQuery.padding.bottom > 0 ? mediaQuery.padding.bottom : 8.0);
+        ? 8.0
+        : (mediaQuery.padding.bottom > 0 ? mediaQuery.padding.bottom : 10.0);
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF161618),
-        border: Border(
-          top: BorderSide(
-            color: Color(0x1AFFFFFF),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_editingMessage != null)
-            _buildEditBar()
-          else if (_replyingToMessage != null)
-            _buildReplyBar(),
-          Padding(
-            padding: EdgeInsets.fromLTRB(8, 6, 8, bottomPadding),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (!_isRecordingVoice) ...[
-                  // 1. Left Circle Button: Paperclip (36x36, 1:1 Telegram iOS Screenshot 2)
-                  GestureDetector(
-                    onTap: _openPhotoGallerySheet,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF222225),
-                        shape: BoxShape.circle,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_editingMessage != null)
+          _buildEditBar()
+        else if (_replyingToMessage != null)
+          _buildReplyBar(),
+        Padding(
+          padding: EdgeInsets.fromLTRB(10, 6, 10, bottomPadding),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!_isRecordingVoice) ...[
+                // 1. Слева: круглая кнопка скрепки
+                GestureDetector(
+                  onTap: _openPhotoGallerySheet,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0x1AFFFFFF),
+                        width: 1.0,
                       ),
-                      child: Center(
-                        child: Transform.rotate(
-                          angle: -math.pi / 4,
-                          child: const Icon(
-                            Icons.attach_file_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                    ),
+                    child: Center(
+                      child: Transform.rotate(
+                        angle: -math.pi / 4,
+                        child: const Icon(
+                          Icons.attach_file_rounded,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                ),
+                const SizedBox(width: 8),
 
-                  // 2. Center Input Capsule (Auto-expanding upwards, 36px base, 1:1 Telegram)
-                  Expanded(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 140),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.bottomCenter,
-                      child: Container(
-                        constraints: const BoxConstraints(
-                          minHeight: 36,
-                          maxHeight: 125,
-                        ),
-                        padding: const EdgeInsets.only(left: 14, right: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF222225),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: const Color(0x10FFFFFF),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // Text input field
-                            Expanded(
-                              child: TextField(
-                                controller: _textController,
-                                onChanged: _handleTextChange,
-                                contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                                keyboardType: TextInputType.multiline,
-                                textCapitalization: TextCapitalization.sentences,
-                                minLines: 1,
-                                maxLines: 5,
-                                textInputAction: TextInputAction.newline,
-                                scrollPhysics: const BouncingScrollPhysics(),
-                                textAlignVertical: TextAlignVertical.center,
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  height: 1.25,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Сообщение',
-                                  hintStyle: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    color: Color(0xFF707579),
-                                    fontSize: 16,
-                                    height: 1.25,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 8),
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-
-                            // Sticker / Smiley emoji icon
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: const Icon(
-                                  Icons.sentiment_satisfied_rounded,
-                                  color: Color(0xFF8E8E93),
-                                  size: 22,
-                                ),
-                                onPressed: () {},
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  // Recording Indicator Bar (Pulsing Red Dot, Timer, Swipe to cancel)
-                  Expanded(
+                // 2. Посередине: красивый пузырь с текстом Сообщение
+                Expanded(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.bottomCenter,
                     child: Container(
-                      height: 36,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      constraints: const BoxConstraints(
+                        minHeight: 40,
+                        maxHeight: 125,
+                      ),
+                      padding: const EdgeInsets.only(left: 16, right: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF222225),
-                        borderRadius: BorderRadius.circular(18),
+                        color: const Color(0xFF191919),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0x1AFFFFFF),
+                          width: 1.0,
+                        ),
                       ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          FadeTransition(
-                            opacity: _blinkAnimation,
-                            child: Container(
-                              width: 9,
-                              height: 9,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFFF3B30),
-                                shape: BoxShape.circle,
+                          // Текстовое поле ввода
+                          Expanded(
+                            child: TextField(
+                              controller: _textController,
+                              onChanged: _handleTextChange,
+                              contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                              keyboardType: TextInputType.multiline,
+                              textCapitalization: TextCapitalization.sentences,
+                              minLines: 1,
+                              maxLines: 5,
+                              textInputAction: TextInputAction.newline,
+                              scrollPhysics: const BouncingScrollPhysics(),
+                              textAlignVertical: TextAlignVertical.center,
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                height: 1.25,
+                              ),
+                              decoration: const InputDecoration(
+                                hintText: 'Сообщение',
+                                hintStyle: TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  color: Color(0xFF929292),
+                                  fontSize: 15.5,
+                                  height: 1.25,
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(vertical: 9),
+                                isDense: true,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _formatRecordingTime(_recordElapsedMs),
-                            style: const TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const Spacer(),
-                          Transform.translate(
-                            offset: Offset((_cancelDragOffset * 0.4).clamp(-50.0, 0.0), 0),
-                            child: Opacity(
-                              opacity: (1.0 + _cancelDragOffset / 120.0).clamp(0.2, 1.0),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.chevron_left_rounded,
-                                    color: _cancelDragOffset < -70
-                                        ? const Color(0xFFFF453A)
-                                        : const Color(0xFF8E8E93),
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    _cancelDragOffset < -70 ? 'Отпустите для отмены' : 'Смахните для отмены',
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.fontText,
-                                      fontSize: 12,
-                                      fontWeight: _cancelDragOffset < -70 ? FontWeight.w600 : FontWeight.normal,
-                                      color: _cancelDragOffset < -70
-                                          ? const Color(0xFFFF453A)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
+
+                          // Смайлик справа внутри пузыря
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: const Icon(
+                                Icons.sentiment_satisfied_rounded,
+                                color: Color(0xFF929292),
+                                size: 22,
                               ),
+                              onPressed: () {},
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                ],
-                const SizedBox(width: 8),
-
-                // 3. Right Action Button: Animated Switcher between Send (Blue Arrow) and Mic (Voice)
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 160),
-                  transitionBuilder: (child, animation) {
-                    return ScaleTransition(
-                      scale: animation,
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
-                  child: hasText
-                      ? GestureDetector(
-                          key: const ValueKey('send_btn'),
-                          onTap: _handleSend,
-                          child: ScaleTransition(
-                            scale: _sendBtnScaleAnim,
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF2AABEE),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: SlideTransition(
-                                  position: _sendBtnArrowSlideAnim,
-                                  child: const Icon(
-                                    Icons.arrow_upward_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
+                ),
+              ] else ...[
+                // Индикатор записи голосового сообщения
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x1AFFFFFF),
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        FadeTransition(
+                          opacity: _blinkAnimation,
+                          child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFF3B30),
+                              shape: BoxShape.circle,
                             ),
                           ),
-                        )
-                      : GestureDetector(
-                          key: const ValueKey('mic_btn'),
-                          behavior: HitTestBehavior.opaque,
-                          onLongPressStart: (_) => _startVoiceRecording(),
-                          onLongPressMoveUpdate: (details) {
-                            _updateVoiceDrag(details.offsetFromOrigin.dx);
-                          },
-                          onLongPressEnd: (_) => _stopVoiceRecording(send: true),
-                          onLongPressCancel: () => _stopVoiceRecording(send: false),
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Удерживайте для записи голосового сообщения'),
-                                behavior: SnackBarBehavior.floating,
-                                duration: Duration(milliseconds: 1500),
-                              ),
-                            );
-                          },
-                          child: SizedBox(
-                            width: 36,
-                            height: 36,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              clipBehavior: Clip.none,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatRecordingTime(_recordElapsedMs),
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        Transform.translate(
+                          offset: Offset((_cancelDragOffset * 0.4).clamp(-50.0, 0.0), 0),
+                          child: Opacity(
+                            opacity: (1.0 + _cancelDragOffset / 120.0).clamp(0.2, 1.0),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Telegram-style ripple waves when recording
-                                if (_isRecordingVoice)
-                                  AnimatedBuilder(
-                                    animation: _rippleController,
-                                    builder: (context, child) {
-                                      final v1 = _rippleController.value;
-                                      final v2 = (v1 + 0.5) % 1.0;
-                                      return Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Container(
-                                            width: 44 + (34 * v1),
-                                            height: 44 + (34 * v1),
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Colors.white.withOpacity((1.0 - v1) * 0.22),
-                                            ),
-                                          ),
-                                          Container(
-                                            width: 44 + (34 * v2),
-                                            height: 44 + (34 * v2),
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Colors.white.withOpacity((1.0 - v2) * 0.22),
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-
-                                // Main Mic Circle
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeOutCubic,
-                                  width: _isRecordingVoice ? 50 : 36,
-                                  height: _isRecordingVoice ? 50 : 36,
-                                  decoration: BoxDecoration(
-                                    color: _isRecordingVoice ? Colors.white : const Color(0xFF222225),
-                                    shape: BoxShape.circle,
-                                    boxShadow: _isRecordingVoice
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.white.withOpacity(0.35),
-                                              blurRadius: 18,
-                                              spreadRadius: 2,
-                                            ),
-                                          ]
-                                        : null,
-                                  ),
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.mic_rounded,
-                                      color: _isRecordingVoice ? Colors.black : Colors.white,
-                                      size: _isRecordingVoice ? 26 : 20,
-                                    ),
+                                Icon(
+                                  Icons.chevron_left_rounded,
+                                  color: _cancelDragOffset < -70
+                                      ? const Color(0xFFFF453A)
+                                      : const Color(0xFF929292),
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  _cancelDragOffset < -70 ? 'Отпустите для отмены' : 'Смахните для отмены',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 12,
+                                    fontWeight: _cancelDragOffset < -70 ? FontWeight.w600 : FontWeight.normal,
+                                    color: _cancelDragOffset < -70
+                                        ? const Color(0xFFFF453A)
+                                        : const Color(0xFF929292),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
-            ),
+              const SizedBox(width: 8),
+
+              // 3. Справа: круглая кнопка голосового сообщения / отправки
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(opacity: animation, child: child),
+                  );
+                },
+                child: hasText
+                    ? GestureDetector(
+                        key: const ValueKey('send_btn'),
+                        onTap: _handleSend,
+                        child: ScaleTransition(
+                          scale: _sendBtnScaleAnim,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF2AABEE),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: SlideTransition(
+                                position: _sendBtnArrowSlideAnim,
+                                child: const Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: Colors.white,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : GestureDetector(
+                        key: const ValueKey('mic_btn'),
+                        behavior: HitTestBehavior.opaque,
+                        onLongPressStart: (_) => _startVoiceRecording(),
+                        onLongPressMoveUpdate: (details) {
+                          _updateVoiceDrag(details.offsetFromOrigin.dx);
+                        },
+                        onLongPressEnd: (_) => _stopVoiceRecording(send: true),
+                        onLongPressCancel: () => _stopVoiceRecording(send: false),
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Удерживайте для записи голосового сообщения'),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(milliseconds: 1500),
+                            ),
+                          );
+                        },
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.none,
+                            children: [
+                              if (_isRecordingVoice)
+                                AnimatedBuilder(
+                                  animation: _rippleController,
+                                  builder: (context, child) {
+                                    final v1 = _rippleController.value;
+                                    final v2 = (v1 + 0.5) % 1.0;
+                                    return Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Container(
+                                          width: 44 + (34 * v1),
+                                          height: 44 + (34 * v1),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white.withOpacity((1.0 - v1) * 0.22),
+                                          ),
+                                        ),
+                                        Container(
+                                          width: 44 + (34 * v2),
+                                          height: 44 + (34 * v2),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white.withOpacity((1.0 - v2) * 0.22),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOutCubic,
+                                width: _isRecordingVoice ? 50 : 40,
+                                height: _isRecordingVoice ? 50 : 40,
+                                decoration: BoxDecoration(
+                                  color: _isRecordingVoice ? Colors.white : const Color(0xFF191919),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: _isRecordingVoice ? Colors.transparent : const Color(0x1AFFFFFF),
+                                    width: 1.0,
+                                  ),
+                                  boxShadow: _isRecordingVoice
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.white.withOpacity(0.35),
+                                            blurRadius: 18,
+                                            spreadRadius: 2,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.mic_rounded,
+                                    color: _isRecordingVoice ? Colors.black : Colors.white,
+                                    size: _isRecordingVoice ? 26 : 21,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
