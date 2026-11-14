@@ -408,10 +408,21 @@ class DatabaseHelper {
         String lastTime = '';
         if (lastMsg is Map<String, dynamic>) {
           lastText = lastMsg['text']?.toString() ?? '';
-          lastTime = lastMsg['created_at']?.toString() ?? '';
+          lastTime = lastMsg['created_at']?.toString() ??
+              lastMsg['createdAt']?.toString() ??
+              lastMsg['time']?.toString() ??
+              lastMsg['date']?.toString() ??
+              '';
         } else if (c['last_message_text'] != null) {
           lastText = c['last_message_text'].toString();
           lastTime = c['last_message_time']?.toString() ?? '';
+        }
+        if (lastTime.isEmpty) {
+          lastTime = c['last_message_time']?.toString() ??
+              c['last_message_date']?.toString() ??
+              c['updated_at']?.toString() ??
+              c['created_at']?.toString() ??
+              '';
         }
 
         final rawId = (c['chat_id'] ?? c['id']);
@@ -563,7 +574,41 @@ class DatabaseHelper {
       'chats',
       orderBy: 'is_pinned DESC, last_message_time DESC, id DESC',
     );
-    return result.map((m) => Chat.fromMap(m)).toList();
+    final chats = result.map((m) => Chat.fromMap(m)).toList();
+    for (int i = 0; i < chats.length; i++) {
+      if (chats[i].lastMessageTime.isEmpty) {
+        final c = chats[i];
+        final msgs = await db.query(
+          'messages',
+          columns: ['created_at', 'text'],
+          where: c.isChannel
+              ? 'chat_id = ?'
+              : '(chat_id = ? OR chat_id = ?)',
+          whereArgs: c.isChannel
+              ? [c.id]
+              : [c.id, c.participantId ?? c.id],
+          orderBy: 'id DESC',
+          limit: 1,
+        );
+        if (msgs.isNotEmpty) {
+          final lastTime = msgs.first['created_at']?.toString() ?? '';
+          final lastText = msgs.first['text']?.toString() ?? '';
+          if (lastTime.isNotEmpty) {
+            chats[i] = c.copyWith(
+              lastMessageTime: lastTime,
+              lastMessageText: c.lastMessageText.isEmpty ? lastText : c.lastMessageText,
+            );
+            await db.update(
+              'chats',
+              {'last_message_time': lastTime},
+              where: 'id = ?',
+              whereArgs: [c.id],
+            );
+          }
+        }
+      }
+    }
+    return chats;
   }
 
   // Получение истории сообщений по чату (последние limit сообщений в хронологическом порядке)

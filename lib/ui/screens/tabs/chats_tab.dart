@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../models/chat.dart';
 import '../../../providers/auth_provider.dart';
@@ -29,9 +28,6 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
   Timer? _debounceTimer;
   bool _isSearching = false;
   List<Map<String, dynamic>> _remoteResults = [];
-
-  int _selectedFolderIndex = 0;
-  final List<String> _folders = const ['Все', 'Личные', 'Каналы', 'Группы'];
 
   late final AnimationController _shimmerController;
   late final Animation<double> _shimmerAnimation;
@@ -436,26 +432,57 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
   }
 
   String _formatMessageTime(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return '';
+    if (dateStr == null || dateStr.trim().isEmpty) return '';
     try {
-      final dt = DateTime.parse(dateStr).toLocal();
+      DateTime dt;
+      final trimmed = dateStr.trim();
+      if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+        final val = int.parse(trimmed);
+        if (val > 1000000000000) {
+          dt = DateTime.fromMillisecondsSinceEpoch(val).toLocal();
+        } else {
+          dt = DateTime.fromMillisecondsSinceEpoch(val * 1000).toLocal();
+        }
+      } else {
+        dt = DateTime.parse(trimmed).toLocal();
+      }
+
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final msgDay = DateTime(dt.year, dt.month, dt.day);
+      final diffDays = today.difference(msgDay).inDays;
 
-      if (msgDay == today) {
-        return DateFormat('HH:mm').format(dt);
-      } else if (today.difference(msgDay).inDays == 1) {
+      if (diffDays == 0) {
+        // Сегодня: "14:03"
+        final h = dt.hour.toString().padLeft(2, '0');
+        final m = dt.minute.toString().padLeft(2, '0');
+        return '$h:$m';
+      } else if (diffDays == 1) {
+        // Вчера
         return 'Вчера';
-      } else if (today.difference(msgDay).inDays < 7 && today.difference(msgDay).inDays > 1) {
-        const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+      } else if (diffDays > 1 && diffDays < 7) {
+        // На этой неделе: "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"
+        const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
         return days[dt.weekday - 1];
       } else if (now.year == dt.year) {
-        return DateFormat('d MMM', 'ru').format(dt);
+        // В этом году: "5 ноя", "29 окт"
+        const months = [
+          'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+          'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
+        ];
+        return '${dt.day} ${months[dt.month - 1]}';
       } else {
-        return DateFormat('dd.MM.yy').format(dt);
+        // Прошлые годы: "05.11.25"
+        final d = dt.day.toString().padLeft(2, '0');
+        final mo = dt.month.toString().padLeft(2, '0');
+        final y = (dt.year % 100).toString().padLeft(2, '0');
+        return '$d.$mo.$y';
       }
     } catch (_) {
+      // Если передана готовая короткая строка типа "14:03"
+      if (dateStr.length <= 5 && dateStr.contains(':')) {
+        return dateStr.trim();
+      }
       return '';
     }
   }
@@ -467,10 +494,6 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final user = auth.currentUser;
 
     final filteredChats = chatProvider.chats.where((c) {
-      if (_selectedFolderIndex == 1 && !c.isDirect) return false;
-      if (_selectedFolderIndex == 2 && !c.isChannel) return false;
-      if (_selectedFolderIndex == 3 && (c.isDirect || c.isChannel)) return false;
-
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase().replaceFirst(RegExp(r'^@+'), '');
       return c.title.toLowerCase().contains(q) ||
@@ -486,109 +509,23 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         child: Column(
           children: [
             // =================================================================
-            // HEADER (Centered "Чаты", "Изм." on left, (+) and blue edit on right)
+            // HEADER (Centered "Чаты" title, no left or right buttons)
             // =================================================================
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: SizedBox(
-                height: 40,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Left: "Изм." edit button
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Управление чатами'),
-                              duration: Duration(seconds: 1),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1C1C1E),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Text(
-                            'Изм.',
-                            style: TextStyle(
-                              fontFamily: AppTheme.fontDisplay,
-                              color: Colors.white,
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
+                height: 36,
+                child: Center(
+                  child: Text(
+                    'Чаты',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                      color: Colors.white,
                     ),
-
-                    // Center: "Чаты" title (smaller, centered)
-                    const Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Чаты',
-                        style: TextStyle(
-                          fontFamily: AppTheme.fontDisplay,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-
-                    // Right: (+) New Channel / Chat and Blue Pencil Compose button
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () => _handleCreateChannel(context),
-                            child: Container(
-                              width: 34,
-                              height: 34,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF1C1C1E),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.add_rounded,
-                                  color: Colors.white,
-                                  size: 21,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () => _handleCreateChannel(context),
-                            child: Container(
-                              width: 34,
-                              height: 34,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF2A85FF),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.edit_square,
-                                  color: Colors.white,
-                                  size: 17,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -600,10 +537,10 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Container(
                 height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   children: [
@@ -647,52 +584,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                 ),
               ),
             ),
-
-            // =================================================================
-            // FOLDER TABS (Все, Личные, Каналы, Группы)
-            // =================================================================
-            if (_searchQuery.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 6),
-                child: SizedBox(
-                  height: 32,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _folders.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final isSelected = _selectedFolderIndex == index;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedFolderIndex = index;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFF1C1C1E) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Center(
-                            child: Text(
-                              _folders[index],
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontDisplay,
-                                color: isSelected ? Colors.white : const Color(0xFF8E8E93),
-                                fontSize: 14,
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
 
             // =================================================================
             // CHATS LIST OR SEARCH RESULTS
@@ -898,11 +790,16 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final chatProvider = context.watch<ChatProvider>();
     final isTyping = chatProvider.isUserTyping(chat.id);
     final isOnline = chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline;
-    final timeStr = _formatMessageTime(chat.lastMessageTime);
+    String timeStr = _formatMessageTime(chat.lastMessageTime);
+    if (timeStr.isEmpty && chat.lastMessageDate.isNotEmpty) {
+      timeStr = _formatMessageTime(chat.lastMessageDate);
+    }
+    if (timeStr.isEmpty && chat.lastSeen != null && chat.lastSeen!.isNotEmpty) {
+      timeStr = _formatMessageTime(chat.lastSeen);
+    }
 
-    // Pinned chats have darker graphite background (#1C1C1C) matching reference screenshot
-    // Unpinned chats have pitch-black background (Colors.black)
-    final tileBg = isPinned ? const Color(0xFF1C1C1C) : Colors.black;
+    // Pure black background for all chats (matching user preference)
+    const tileBg = Colors.black;
 
     return Container(
       color: tileBg,
@@ -1075,18 +972,18 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
               ),
             ),
           ),
-          Divider(
-            height: 0.6,
-            thickness: 0.6,
-            color: isPinned ? const Color(0xFF2C2C2E) : const Color(0x14FFFFFF),
-            indent: 81,
-            endIndent: 0,
+          // Separator line matching Telegram
+          Container(
+            height: 0.8,
+            margin: const EdgeInsets.only(left: 78),
+            color: const Color(0x1AFFFFFF),
           ),
         ],
       ),
     );
   }
 
+  // ignore: unused_element
   void _handleCreateChannel(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final chatProvider = context.read<ChatProvider>();

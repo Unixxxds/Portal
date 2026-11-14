@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../theme.dart';
 
 class LiquidGlassTabBar extends StatefulWidget {
@@ -278,8 +279,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                           _buildTabItem(
                             index: 2,
                             label: 'Чаты',
-                            outlineIcon: Icons.chat_bubble_outline_rounded,
-                            filledIcon: Icons.chat_bubble_rounded,
+                            svgAsset: 'lib/assets/chat.svg',
                             slotWidth: slotWidth,
                             barWidth: barWidth,
                             badgeCount: widget.totalUnreadCount,
@@ -317,8 +317,9 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   Widget _buildTabItem({
     required int index,
     required String label,
-    required IconData outlineIcon,
-    required IconData filledIcon,
+    IconData? outlineIcon,
+    IconData? filledIcon,
+    String? svgAsset,
     required double slotWidth,
     required double barWidth,
     int badgeCount = 0,
@@ -344,11 +345,19 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(
-                    isActive ? filledIcon : outlineIcon,
-                    color: iconColor,
-                    size: 23,
-                  ),
+                  if (svgAsset != null)
+                    SvgPicture.asset(
+                      svgAsset,
+                      width: 22,
+                      height: 22,
+                      colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+                    )
+                  else if (filledIcon != null && outlineIcon != null)
+                    Icon(
+                      isActive ? filledIcon : outlineIcon,
+                      color: iconColor,
+                      size: 23,
+                    ),
                   if (badgeCount > 0)
                     Positioned(
                       top: -3,

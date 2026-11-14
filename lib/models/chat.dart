@@ -189,10 +189,21 @@ class Chat {
     String lastTime = '';
     if (lastMsg is Map<String, dynamic>) {
       lastText = lastMsg['text']?.toString() ?? '';
-      lastTime = lastMsg['created_at']?.toString() ?? '';
+      lastTime = lastMsg['created_at']?.toString() ??
+          lastMsg['createdAt']?.toString() ??
+          lastMsg['time']?.toString() ??
+          lastMsg['date']?.toString() ??
+          '';
     } else if (json['last_message_text'] != null) {
       lastText = json['last_message_text'].toString();
       lastTime = json['last_message_time']?.toString() ?? '';
+    }
+    if (lastTime.isEmpty) {
+      lastTime = json['last_message_time']?.toString() ??
+          json['last_message_date']?.toString() ??
+          json['updated_at']?.toString() ??
+          json['created_at']?.toString() ??
+          '';
     }
 
     final pId = json['participant_id'] is int

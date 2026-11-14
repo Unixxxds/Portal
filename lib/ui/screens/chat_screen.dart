@@ -29,6 +29,7 @@ import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_bubble.dart';
 import '../widgets/telegram_message_entrance.dart';
 import '../widgets/telegram_profile_route.dart';
+import '../widgets/telegram_swipe_to_reply.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
 import '../widgets/telegram_typing_indicator.dart';
 import '../widgets/voice_message_bubble.dart';
@@ -49,6 +50,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final _textController = TextEditingController();
+  final _textFocusNode = FocusNode();
   final _scrollController = ScrollController();
   bool _isTypingSent = false;
   Message? _replyingToMessage;
@@ -265,6 +267,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       WebSocketService.instance.sendTyping(widget.chat.id, isTyping: false);
     }
     _textController.dispose();
+    _textFocusNode.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
     _audioRecorder.dispose();
@@ -273,6 +276,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _sendBtnAnimController.dispose();
     _pickerProgress.dispose();
     super.dispose();
+  }
+
+  void _handleReplyToMessage(Message msg) {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _replyingToMessage = msg;
+      _editingMessage = null;
+    });
+    _textFocusNode.requestFocus();
   }
 
   void _jumpToBottomFast() {
@@ -693,6 +705,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 child: cardWidget,
                               );
                             }
+
+                            final canReply = !currentChat.isChannel || isChannelOwner;
+                            cardWidget = TelegramSwipeToReply(
+                              key: ValueKey('swipe_${msg.id}'),
+                              enabled: canReply,
+                              onReply: () => _handleReplyToMessage(msg),
+                              child: cardWidget,
+                            );
 
                             if (showDate) {
                               return Column(
@@ -3904,30 +3924,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     child: Container(
                       constraints: const BoxConstraints(
                         minHeight: 40,
-                        maxHeight: 125,
+                        maxHeight: 140,
                       ),
                       padding: const EdgeInsets.only(left: 16, right: 6),
                       decoration: BoxDecoration(
                         color: const Color(0xFF191919),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: const Color(0x1AFFFFFF),
                           width: 1.0,
                         ),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           // Текстовое поле ввода
                           Expanded(
                             child: TextField(
                               controller: _textController,
+                              focusNode: _textFocusNode,
                               onChanged: _handleTextChange,
                               contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
                               keyboardType: TextInputType.multiline,
                               textCapitalization: TextCapitalization.sentences,
                               minLines: 1,
-                              maxLines: 5,
+                              maxLines: 6,
                               textInputAction: TextInputAction.newline,
                               scrollPhysics: const BouncingScrollPhysics(),
                               textAlignVertical: TextAlignVertical.center,
@@ -3946,22 +3967,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   height: 1.25,
                                 ),
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                contentPadding: EdgeInsets.fromLTRB(0, 5, 0, 16),
                                 isDense: true,
                               ),
                             ),
                           ),
                           const SizedBox(width: 4),
 
-                          // Смайлик справа внутри пузыря (GestureDetector без 48px ограничений)
+                          // Смайлик справа внутри пузыря (прижат к низу как в Telegram)
                           GestureDetector(
                             onTap: () {},
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 2),
-                              child: Icon(
-                                Icons.sentiment_satisfied_rounded,
-                                color: Color(0xFF929292),
-                                size: 22,
+                            child: const SizedBox(
+                              height: 40,
+                              child: Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 2),
+                                  child: Icon(
+                                    Icons.sentiment_satisfied_rounded,
+                                    color: Color(0xFF929292),
+                                    size: 22,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
