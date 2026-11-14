@@ -25,9 +25,9 @@ class TelegramBubble extends StatelessWidget {
     this.padding,
   });
 
-  // Authentic Telegram colors extracted from reference
+  // Authentic colors: outgoing is Telegram blue, incoming is Portal dark grey
   static const Color defaultOutgoingColor = Color(0xFF5B65F6);
-  static const Color defaultIncomingColor = Color(0xFF252332);
+  static const Color defaultIncomingColor = Color(0xFF191919);
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +82,15 @@ class TelegramBubblePainter extends CustomPainter {
       ..isAntiAlias = true;
 
     canvas.drawPath(path, paint);
+
+    if (!isMe) {
+      final borderPaint = Paint()
+        ..color = const Color(0x14FFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..isAntiAlias = true;
+      canvas.drawPath(path, borderPaint);
+    }
   }
 
   @override
@@ -250,3 +259,4 @@ Path buildTelegramBubblePath({
 
   return path;
 }
+

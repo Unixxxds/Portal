@@ -2241,7 +2241,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildMessageTextWithTime(Message msg, bool isMe, double maxBubbleWidth) {
-    final timeColor = isMe ? const Color(0xCCFFFFFF) : const Color(0xFF8E8D9E);
+    final timeColor = isMe ? const Color(0xCCFFFFFF) : const Color(0xFF929292);
     final timeWidget = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
