@@ -114,17 +114,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _liveIsPremium = widget.chat.isPremium;
     _channelOwnerId = widget.chat.ownerId;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final chatProv = context.read<ChatProvider>();
+      chatProv.loadPinnedMessage(widget.chat.id);
+      final currentUserId = context.read<AuthProvider>().currentUser?.id;
+      if (currentUserId != null && _channelOwnerId == currentUserId) {
+        setState(() {
+          _canPostToChannel = true;
+        });
+      }
+      _checkUserPresence();
+      await chatProv.openChat(
+        widget.chat.id,
+        participantId: widget.chat.participantId,
+      );
       if (mounted) {
-        context.read<ChatProvider>().loadPinnedMessage(widget.chat.id);
-        final currentUserId = context.read<AuthProvider>().currentUser?.id;
-        if (currentUserId != null && _channelOwnerId == currentUserId) {
-          setState(() {
-            _canPostToChannel = true;
-          });
-        }
+        _jumpToBottomFast();
+        Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
+        Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
+        Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
       }
     });
+
     if (widget.chat.isChannel) {
       ApiService.instance.getChannel(widget.chat.id).then((data) {
         if (data != null && mounted) {
@@ -162,15 +174,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
       }).catchError((_) {});
     }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _checkUserPresence();
-      await context.read<ChatProvider>().openChat(widget.chat.id);
-      _jumpToBottomFast();
-      Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
-      Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
-      Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
-    });
   }
 
   Future<void> _checkUserPresence() async {

@@ -65,34 +65,79 @@ class Message {
     );
   }
 
-  factory Message.fromJson(Map<String, dynamic> json) {
+  factory Message.fromJson(Map<String, dynamic> json, {int? fallbackChatId}) {
+    final rawChatId = json['chat_id'] ?? json['chatId'];
+    final parsedChatId = rawChatId is int
+        ? rawChatId
+        : int.tryParse(rawChatId?.toString() ?? '');
+    final finalChatId = (parsedChatId != null && parsedChatId > 0)
+        ? parsedChatId
+        : (fallbackChatId ?? 0);
+
+    final rawSenderId = json['sender_id'] ?? json['senderId'] ?? json['user_id'] ?? json['userId'];
+    final parsedSenderId = rawSenderId is int
+        ? rawSenderId
+        : int.tryParse(rawSenderId?.toString() ?? '') ?? 0;
+
+    final rawReplyId = json['reply_to_message_id'] ?? json['replyToMessageId'] ?? json['reply_id'] ?? json['replyId'];
+    final parsedReplyId = rawReplyId is int
+        ? rawReplyId
+        : int.tryParse(rawReplyId?.toString() ?? '');
+
+    final rawCreatedAt = json['created_at'] ?? json['createdAt'];
+    final createdAtStr = rawCreatedAt?.toString() ?? DateTime.now().toIso8601String();
+
+    final isRead = json['is_read'] == 1 ||
+        json['is_read'] == true ||
+        json['isRead'] == 1 ||
+        json['isRead'] == true;
+
+    final senderName = json['sender_name']?.toString() ??
+        json['senderName']?.toString() ??
+        json['sender_first_name']?.toString() ??
+        '';
+
+    final senderAvatar = json['sender_avatar']?.toString() ??
+        json['senderAvatar']?.toString() ??
+        '';
+
+    final isEdited = json['is_edited'] == 1 ||
+        json['is_edited'] == true ||
+        json['isEdited'] == 1 ||
+        json['isEdited'] == true;
+
+    final commentsCount = json['comments_count'] is int
+        ? json['comments_count'] as int
+        : (json['commentsCount'] is int
+            ? json['commentsCount'] as int
+            : int.tryParse(json['comments_count']?.toString() ?? json['commentsCount']?.toString() ?? '') ?? 0);
+
+    final viewsCount = json['views_count'] is int
+        ? json['views_count'] as int
+        : (json['viewsCount'] is int
+            ? json['viewsCount'] as int
+            : int.tryParse(json['views_count']?.toString() ?? json['viewsCount']?.toString() ?? '') ?? 1);
+
+    final isViewed = json['is_viewed'] == 1 ||
+        json['is_viewed'] == true ||
+        json['isViewed'] == 1 ||
+        json['isViewed'] == true;
+
     return Message(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      chatId: json['chat_id'] is int ? json['chat_id'] : int.tryParse(json['chat_id'].toString()) ?? 0,
-      senderId: json['sender_id'] is int ? json['sender_id'] : int.tryParse(json['sender_id'].toString()) ?? 0,
-      text: json['text']?.toString() ?? '',
-      replyToMessageId: json['reply_to_message_id'] != null
-          ? (json['reply_to_message_id'] is int
-              ? json['reply_to_message_id']
-              : int.tryParse(json['reply_to_message_id'].toString()))
-          : null,
-      createdAt: json['created_at']?.toString() ?? DateTime.now().toIso8601String(),
-      isRead: json['is_read'] == 1 || json['is_read'] == true,
-      senderName: json['sender_name']?.toString() ?? '',
-      senderAvatar: json['sender_avatar']?.toString() ?? '',
+      chatId: finalChatId,
+      senderId: parsedSenderId,
+      text: json['text']?.toString() ?? json['content']?.toString() ?? '',
+      replyToMessageId: parsedReplyId,
+      createdAt: createdAtStr,
+      isRead: isRead,
+      senderName: senderName,
+      senderAvatar: senderAvatar,
       isPending: false,
-      isEdited: json['is_edited'] == 1 || json['is_edited'] == true || json['isEdited'] == true,
-      commentsCount: json['comments_count'] is int
-          ? json['comments_count'] as int
-          : (json['commentsCount'] is int
-              ? json['commentsCount'] as int
-              : int.tryParse(json['comments_count']?.toString() ?? json['commentsCount']?.toString() ?? '') ?? 0),
-      viewsCount: json['views_count'] is int
-          ? json['views_count'] as int
-          : (json['viewsCount'] is int
-              ? json['viewsCount'] as int
-              : int.tryParse(json['views_count']?.toString() ?? json['viewsCount']?.toString() ?? '') ?? 1),
-      isViewed: json['is_viewed'] == 1 || json['is_viewed'] == true || json['isViewed'] == true,
+      isEdited: isEdited,
+      commentsCount: commentsCount,
+      viewsCount: viewsCount,
+      isViewed: isViewed,
     );
   }
 

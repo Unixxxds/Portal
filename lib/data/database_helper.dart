@@ -488,21 +488,62 @@ class DatabaseHelper {
 
       // 3. Сохраняем сообщения
       recentMessages.forEach((chatIdStr, msgs) {
+        final parsedKeyChatId = int.tryParse(chatIdStr) ?? 0;
         if (msgs is List) {
           for (final m in msgs) {
             if (m is! Map<String, dynamic>) continue;
+            final mChatId = m['chat_id'] is int
+                ? m['chat_id'] as int
+                : int.tryParse(m['chat_id']?.toString() ?? '') ??
+                    (m['chatId'] is int
+                        ? m['chatId'] as int
+                        : int.tryParse(m['chatId']?.toString() ?? '') ?? parsedKeyChatId);
+            final mId = m['id'] is int ? m['id'] as int : int.tryParse(m['id']?.toString() ?? '') ?? 0;
+            final mSenderId = m['sender_id'] is int
+                ? m['sender_id'] as int
+                : int.tryParse(m['sender_id']?.toString() ?? '') ??
+                    (m['senderId'] is int
+                        ? m['senderId'] as int
+                        : int.tryParse(m['senderId']?.toString() ?? '') ?? 0);
+            final mReplyId = m['reply_to_message_id'] as int? ??
+                m['replyToMessageId'] as int? ??
+                int.tryParse(m['reply_to_message_id']?.toString() ?? m['replyToMessageId']?.toString() ?? '');
+            final mCreatedAt = m['created_at']?.toString() ?? m['createdAt']?.toString() ?? '';
+            final mIsRead = (m['is_read'] == true || m['is_read'] == 1 || m['isRead'] == true || m['isRead'] == 1) ? 1 : 0;
+            final mSenderName = m['sender_first_name']?.toString() ??
+                m['sender_name']?.toString() ??
+                m['senderName']?.toString() ??
+                '';
+            final mSenderAvatar = m['sender_avatar']?.toString() ?? m['senderAvatar']?.toString() ?? '';
+            final mIsEdited = (m['is_edited'] == 1 || m['is_edited'] == true || m['isEdited'] == 1 || m['isEdited'] == true) ? 1 : 0;
+            final mComments = m['comments_count'] is int
+                ? m['comments_count'] as int
+                : (m['commentsCount'] is int
+                    ? m['commentsCount'] as int
+                    : int.tryParse(m['comments_count']?.toString() ?? m['commentsCount']?.toString() ?? '') ?? 0);
+            final mViews = m['views_count'] is int
+                ? m['views_count'] as int
+                : (m['viewsCount'] is int
+                    ? m['viewsCount'] as int
+                    : int.tryParse(m['views_count']?.toString() ?? m['viewsCount']?.toString() ?? '') ?? 1);
+            final mIsViewed = (m['is_viewed'] == 1 || m['is_viewed'] == true || m['isViewed'] == 1 || m['isViewed'] == true) ? 1 : 0;
+
             batch.insert(
               'messages',
               {
-                'id': m['id'] is int ? m['id'] : int.tryParse(m['id'].toString()) ?? 0,
-                'chat_id': m['chat_id'] is int ? m['chat_id'] : int.tryParse(m['chat_id'].toString()) ?? 0,
-                'sender_id': m['sender_id'] is int ? m['sender_id'] : int.tryParse(m['sender_id'].toString()) ?? 0,
-                'text': m['text']?.toString() ?? '',
-                'reply_to_message_id': m['reply_to_message_id'] as int?,
-                'created_at': m['created_at']?.toString() ?? '',
-                'is_read': (m['is_read'] == true || m['is_read'] == 1) ? 1 : 0,
-                'sender_name': m['sender_first_name']?.toString() ?? m['sender_name']?.toString() ?? '',
-                'sender_avatar': m['sender_avatar']?.toString() ?? '',
+                'id': mId,
+                'chat_id': mChatId,
+                'sender_id': mSenderId,
+                'text': m['text']?.toString() ?? m['content']?.toString() ?? '',
+                'reply_to_message_id': mReplyId,
+                'created_at': mCreatedAt,
+                'is_read': mIsRead,
+                'sender_name': mSenderName,
+                'sender_avatar': mSenderAvatar,
+                'is_edited': mIsEdited,
+                'comments_count': mComments,
+                'views_count': mViews,
+                'is_viewed': mIsViewed,
               },
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
@@ -524,17 +565,29 @@ class DatabaseHelper {
     return result.map((m) => Chat.fromMap(m)).toList();
   }
 
-  // Получение истории сообщений по чату
-  Future<List<Message>> getMessages(int chatId, {int limit = 50}) async {
+  // Получение истории сообщений по чату (последние limit сообщений в хронологическом порядке)
+  Future<List<Message>> getMessages(int chatId, {int? alternateChatId, int limit = 300}) async {
     final db = await instance.database;
-    final result = await db.query(
-      'messages',
-      where: 'chat_id = ?',
-      whereArgs: [chatId],
-      orderBy: 'created_at ASC, id ASC',
-      limit: limit,
-    );
-    return result.map((m) => Message.fromMap(m)).toList();
+    final List<Map<String, dynamic>> result;
+    if (alternateChatId != null && alternateChatId != chatId && alternateChatId > 0) {
+      result = await db.query(
+        'messages',
+        where: 'chat_id = ? OR chat_id = ?',
+        whereArgs: [chatId, alternateChatId],
+        orderBy: 'created_at DESC, id DESC',
+        limit: limit,
+      );
+    } else {
+      result = await db.query(
+        'messages',
+        where: 'chat_id = ?',
+        whereArgs: [chatId],
+        orderBy: 'created_at DESC, id DESC',
+        limit: limit,
+      );
+    }
+    final list = result.map((m) => Message.fromMap(m)).toList();
+    return list.reversed.toList();
   }
 
   // Сохранение одного сообщения (при отправке или получении по WS)
@@ -551,6 +604,39 @@ class DatabaseHelper {
       message.text,
       message.createdAt,
     );
+  }
+
+  // Пакетное сохранение сообщений в одной быстрой транзакции
+  Future<void> insertMessages(List<Message> messages) async {
+    if (messages.isEmpty) return;
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final m in messages) {
+        batch.insert(
+          'messages',
+          m.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+
+    try {
+      Message? newest;
+      for (final m in messages) {
+        if (newest == null || m.createdAt.compareTo(newest.createdAt) > 0) {
+          newest = m;
+        }
+      }
+      if (newest != null) {
+        await updateChatLastMessage(
+          newest.chatId,
+          newest.text,
+          newest.createdAt,
+        );
+      }
+    } catch (_) {}
   }
 
   // Удаление сообщения
@@ -611,22 +697,26 @@ class DatabaseHelper {
   // Обновление последнего сообщения в чате
   Future<void> updateChatLastMessage(int chatId, String text, String time, {int unreadDelta = 0}) async {
     final db = await instance.database;
+    final nowStr = DateTime.now().toIso8601String();
     if (unreadDelta > 0) {
-      await db.rawUpdate(
-        'UPDATE chats SET last_message_text = ?, last_message_time = ?, unread_count = unread_count + ?, updated_at = ? WHERE id = ?',
-        [text, time, unreadDelta, DateTime.now().toIso8601String(), chatId],
-      );
+      await db.rawUpdate('''
+        UPDATE chats 
+        SET last_message_text = ?, 
+            last_message_time = ?, 
+            unread_count = unread_count + ?, 
+            updated_at = ? 
+        WHERE (id = ? OR participant_id = ?) 
+          AND (last_message_time IS NULL OR last_message_time <= ? OR last_message_time = '')
+      ''', [text, time, unreadDelta, nowStr, chatId, chatId, time]);
     } else {
-      await db.update(
-        'chats',
-        {
-          'last_message_text': text,
-          'last_message_time': time,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [chatId],
-      );
+      await db.rawUpdate('''
+        UPDATE chats 
+        SET last_message_text = ?, 
+            last_message_time = ?, 
+            updated_at = ? 
+        WHERE (id = ? OR participant_id = ?) 
+          AND (last_message_time IS NULL OR last_message_time <= ? OR last_message_time = '')
+      ''', [text, time, nowStr, chatId, chatId, time]);
     }
   }
 
@@ -636,8 +726,8 @@ class DatabaseHelper {
     await db.update(
       'chats',
       {'unread_count': 0},
-      where: 'id = ?',
-      whereArgs: [chatId],
+      where: 'id = ? OR participant_id = ?',
+      whereArgs: [chatId, chatId],
     );
     await db.update(
       'messages',
