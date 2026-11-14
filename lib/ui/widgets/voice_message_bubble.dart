@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../models/message.dart';
 import '../theme.dart';
+import 'telegram_bubble.dart';
 
 /// Single audio player coordinator so playing one voice message stops any other
 class VoicePlayerCoordinator {
@@ -231,30 +232,17 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onLongPress,
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.fromLTRB(10, 10, 14, 8),
+          margin: const EdgeInsets.symmetric(vertical: 2.5),
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.78,
             minWidth: 200,
           ),
-          decoration: BoxDecoration(
-            color: isMe ? const Color(0xFF2A2A2A) : const Color(0xFF191919),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(isMe ? 18 : 4),
-              bottomRight: Radius.circular(isMe ? 4 : 18),
-            ),
-            border: isMe ? null : Border.all(color: const Color(0x14FFFFFF), width: 0.8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
+          child: TelegramBubble(
+            isMe: isMe,
+            padding: isMe
+                ? const EdgeInsets.fromLTRB(10, 8, 16, 7)
+                : const EdgeInsets.fromLTRB(16, 8, 10, 7),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -415,7 +403,8 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

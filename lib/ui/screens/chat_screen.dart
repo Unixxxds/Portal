@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
@@ -26,6 +26,7 @@ import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/send_gift_modal.dart';
+import '../widgets/telegram_bubble.dart';
 import '../widgets/telegram_message_entrance.dart';
 import '../widgets/telegram_profile_route.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
@@ -2190,101 +2191,182 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       );
     }
 
+    final double maxBubbleWidth = MediaQuery.of(context).size.width * 0.78;
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPress: () => _showMessageContextMenu(msg),
         onSecondaryTap: () => _showMessageContextMenu(msg),
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.symmetric(vertical: 2.5),
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-            minWidth: 70,
+            maxWidth: maxBubbleWidth,
+            minWidth: 50,
           ),
-          decoration: BoxDecoration(
-            color: isMe ? const Color(0xFF2A2A2A) : const Color(0xFF191919),
-            borderRadius: BorderRadius.circular(18),
-            border: isMe ? null : Border.all(color: const Color(0x14FFFFFF), width: 0.8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Replied Message Quote (if any)
-              if (msg.replyToMessageId != null) ...[
-                _buildReplyPreviewInBubble(msg.replyToMessageId!),
-                const SizedBox(height: 6),
-              ],
-
-              // Sender name if in group
-              if (!isMe && msg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
-                Text(
-                  msg.senderName,
-                  style: const TextStyle(
-                    fontFamily: AppTheme.fontDisplay,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(height: 3),
-              ],
-
-              // Message text
-              FormattedMessageText(
-                text: msg.text,
-                messageId: msg.id,
-              ),
-              const SizedBox(height: 4),
-
-              // Time and Checkmark inside bubble at bottom right
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (msg.isEdited) ...[
-                    const Text(
-                      'изменено ',
-                      style: TextStyle(
-                        fontFamily: AppTheme.fontText,
-                        fontSize: 11,
-                        color: Color(0xFF929292),
-                      ),
-                    ),
-                  ],
-                  Text(
-                    _formatMessageTime(msg.createdAt),
-                    style: const TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 11.5,
-                      color: Color(0xFF929292),
-                    ),
-                  ),
-                  if (isMe) ...[
-                    const SizedBox(width: 4),
-                    if (msg.isPending)
-                      const SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.4,
-                          color: Color(0xFF929292),
-                        ),
-                      )
-                    else
-                      Icon(
-                        msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
-                        size: 14,
-                        color: const Color(0xFF929292),
-                      ),
-                  ],
+          child: TelegramBubble(
+            isMe: isMe,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Replied Message Quote (if any)
+                if (msg.replyToMessageId != null) ...[
+                  _buildReplyPreviewInBubble(msg.replyToMessageId!),
+                  const SizedBox(height: 5),
                 ],
-              ),
-            ],
+
+                // Sender name if in group
+                if (!isMe && msg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
+                  Text(
+                    msg.senderName,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                ],
+
+                // Message text & time (Telegram inline layout)
+                _buildMessageTextWithTime(msg, isMe, maxBubbleWidth),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMessageTextWithTime(Message msg, bool isMe, double maxBubbleWidth) {
+    final timeColor = isMe ? const Color(0xCCFFFFFF) : const Color(0xFF8E8D9E);
+    final timeWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (msg.isEdited) ...[
+          Text(
+            'изменено ',
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              fontSize: 11,
+              color: timeColor,
+            ),
+          ),
+        ],
+        Text(
+          _formatMessageTime(msg.createdAt),
+          style: TextStyle(
+            fontFamily: AppTheme.fontText,
+            fontSize: 11.5,
+            color: timeColor,
+          ),
+        ),
+        if (isMe) ...[
+          const SizedBox(width: 3.5),
+          if (msg.isPending)
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.4,
+                color: timeColor,
+              ),
+            )
+          else
+            Icon(
+              msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
+              size: 14.5,
+              color: timeColor,
+            ),
+        ],
+      ],
+    );
+
+    final bool hasNewlines = msg.text.contains('\n');
+    final bool hasQuote = msg.text.contains('>') || msg.text.contains('[QUOTE]');
+    if (hasNewlines || hasQuote) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FormattedMessageText(
+            text: msg.text,
+            messageId: msg.id,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontText,
+              color: Colors.white,
+              fontSize: 15.5,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: timeWidget,
+          ),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : (maxBubbleWidth - 36.0);
+
+        const textStyle = TextStyle(
+          fontFamily: AppTheme.fontText,
+          color: Colors.white,
+          fontSize: 15.5,
+          height: 1.3,
+        );
+
+        final tp = TextPainter(
+          text: TextSpan(text: msg.text, style: textStyle),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: availableWidth);
+
+        final double estTimeWidth = (isMe ? 62.0 : 48.0) + (msg.isEdited ? 50.0 : 0.0);
+
+        if (tp.width + estTimeWidth + 8.0 <= availableWidth) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Flexible(
+                child: Text(
+                  msg.text,
+                  style: textStyle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 1.0),
+                child: timeWidget,
+              ),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              msg.text,
+              style: textStyle,
+            ),
+            const SizedBox(height: 3),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: timeWidget,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2684,98 +2766,99 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         onLongPress: () => _showMessageContextMenu(msg),
         onSecondaryTap: () => _showMessageContextMenu(msg),
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
+          margin: const EdgeInsets.symmetric(vertical: 2.5),
           constraints: BoxConstraints(
             maxWidth: bubbleWidth,
           ),
-          decoration: BoxDecoration(
-            color: isMe ? const Color(0xFF2A2A2A) : const Color(0xFF191919),
-            borderRadius: BorderRadius.circular(18),
-            border: isMe ? null : Border.all(color: const Color(0x14FFFFFF), width: 0.8),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (msg.replyToMessageId != null) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-                  child: _buildReplyPreviewInBubble(msg.replyToMessageId!),
-                ),
-              ],
-              if (fullUrls.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(msg.replyToMessageId != null ? 8 : 18),
-                    topRight: Radius.circular(msg.replyToMessageId != null ? 8 : 18),
-                    bottomLeft: Radius.circular(caption.isNotEmpty ? 4 : 18),
-                    bottomRight: Radius.circular(caption.isNotEmpty ? 4 : 18),
-                  ),
-                  child: _buildCollage(
-                    fullUrls,
-                    bubbleWidth,
-                    caption.isEmpty ? _buildFloatingTimestamp(msg, isMe) : null,
-                    isPending: msg.isPending,
-                    onCancel: msg.isPending
-                        ? () => context.read<ChatProvider>().cancelPendingMessage(widget.chat.id, msg.id)
-                        : null,
-                  ),
-                ),
-              if (caption.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FormattedMessageText(
-                        text: caption,
-                        messageId: msg.id,
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          color: Colors.white,
-                          fontSize: 14.5,
-                          height: 1.35,
-                        ),
+          child: TelegramBubble(
+            isMe: isMe,
+            padding: EdgeInsets.zero,
+            child: ClipPath(
+              clipper: TelegramBubbleClipper(isMe: isMe),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (msg.replyToMessageId != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                      child: _buildReplyPreviewInBubble(msg.replyToMessageId!),
+                    ),
+                  ],
+                  if (fullUrls.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(msg.replyToMessageId != null ? 8 : 18),
+                        topRight: Radius.circular(msg.replyToMessageId != null ? 8 : 18),
+                        bottomLeft: Radius.circular(caption.isNotEmpty ? 4 : 18),
+                        bottomRight: Radius.circular(caption.isNotEmpty ? 4 : 18),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
+                      child: _buildCollage(
+                        fullUrls,
+                        bubbleWidth,
+                        caption.isEmpty ? _buildFloatingTimestamp(msg, isMe) : null,
+                        isPending: msg.isPending,
+                        onCancel: msg.isPending
+                            ? () => context.read<ChatProvider>().cancelPendingMessage(widget.chat.id, msg.id)
+                            : null,
+                      ),
+                    ),
+                  if (caption.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Spacer(),
-                          if (msg.isEdited) ...[
-                            const Text(
-                              'изменено ',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                fontSize: 10.5,
-                                color: Color(0xFF929292),
-                              ),
-                            ),
-                          ],
-                          Text(
-                            _formatMessageTime(msg.createdAt),
+                          FormattedMessageText(
+                            text: caption,
+                            messageId: msg.id,
                             style: const TextStyle(
                               fontFamily: AppTheme.fontText,
-                              fontSize: 11,
-                              color: Color(0xFF929292),
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              height: 1.35,
                             ),
                           ),
-                          if (isMe) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
-                              size: 13,
-                              color: const Color(0xFF929292),
-                            ),
-                          ],
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              const Spacer(),
+                              if (msg.isEdited) ...[
+                                const Text(
+                                  'изменено ',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 10.5,
+                                    color: Color(0xFF929292),
+                                  ),
+                                ),
+                              ],
+                              Text(
+                                _formatMessageTime(msg.createdAt),
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  fontSize: 11,
+                                  color: Color(0xFF929292),
+                                ),
+                              ),
+                              if (isMe) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
+                                  size: 13,
+                                  color: const Color(0xFF929292),
+                                ),
+                              ],
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-            ],
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
