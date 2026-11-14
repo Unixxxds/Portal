@@ -14,11 +14,23 @@ import 'telegram_text_selection_toolbar.dart';
 class PhotoPickerBottomSheet extends StatefulWidget {
   final Function(List<File> files, String caption) onSend;
   final VoidCallback? onOpenGifts;
+  final VoidCallback? onClose;
+  final ValueChanged<double>? onProgressChanged;
+  final double btnLeft;
+  final double? btnBottom;
+  final double btnSize;
+  final double btnRadius;
 
   const PhotoPickerBottomSheet({
     super.key,
     required this.onSend,
     this.onOpenGifts,
+    this.onClose,
+    this.onProgressChanged,
+    this.btnLeft = 10.0,
+    this.btnBottom,
+    this.btnSize = 40.0,
+    this.btnRadius = 20.0,
   });
 
   /// Открывает меню выбора фото с анимацией «True Circle Morph» (1:1 как в референсе)
@@ -26,6 +38,11 @@ class PhotoPickerBottomSheet extends StatefulWidget {
     BuildContext context, {
     required Function(List<File> files, String caption) onSend,
     VoidCallback? onOpenGifts,
+    ValueChanged<double>? onProgressChanged,
+    double btnLeft = 10.0,
+    double? btnBottom,
+    double btnSize = 40.0,
+    double btnRadius = 20.0,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder(
@@ -36,23 +53,22 @@ class PhotoPickerBottomSheet extends StatefulWidget {
         pageBuilder: (ctx, anim1, anim2) => PhotoPickerBottomSheet(
           onSend: onSend,
           onOpenGifts: onOpenGifts,
+          onProgressChanged: onProgressChanged,
+          btnLeft: btnLeft,
+          btnBottom: btnBottom,
+          btnSize: btnSize,
+          btnRadius: btnRadius,
         ),
       ),
     );
   }
 
   @override
-  State<PhotoPickerBottomSheet> createState() => _PhotoPickerBottomSheetState();
+  State<PhotoPickerBottomSheet> createState() => PhotoPickerBottomSheetState();
 }
 
-class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet>
+class PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet>
     with SingleTickerProviderStateMixin {
-  // Геометрия круглой кнопки со скрепкой из HTML
-  static const double btnLeft = 14.0;
-  static const double btnBottom = 18.0;
-  static const double btnSize = 44.0;
-  static const double btnRadius = 22.0;
-
   // Параметры пружины (Spring physics 1:1 из HTML: stiffness 360, damping 32)
   static const double springStiffness = 360.0;
   static const double springDamping = 32.0;
@@ -167,11 +183,14 @@ class _PhotoPickerBottomSheetState extends State<PhotoPickerBottomSheet>
       _velocity = 0.0;
     }
 
+    widget.onProgressChanged?.call(_progress);
+
     if (displacement.abs() < 0.0012 && _velocity.abs() < 0.008) {
       _progress = _targetProgress;
       _velocity = 0.0;
       _ticker.stop();
       if (_progress == 0.0) {
+        widget.onProgressChanged?.call(0.0);
         if (mounted) {
           Navigator.of(context).pop();
         }
@@ -310,16 +329,17 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
     final double p = _progress;
 
+    final double btnLeft = widget.btnLeft;
+    final double btnBottom = widget.btnBottom ?? (bottomInset > 0 ? bottomInset : 10.0);
+    final double btnSize = widget.btnSize;
+    final double btnRadius = widget.btnRadius;
+
     // 1. Scrim (затемнение заднего фона)
     final double scrimOpacity = p <= 1.0
         ? (p * 0.35).clamp(0.0, 0.35)
         : (0.35 + (p - 1.0) * 0.30).clamp(0.35, 0.65);
 
-    // 2. Кнопка со скрепкой (растворяется в первые 25% роста круга)
-    final double btnFade = (1.0 - p * 3.8).clamp(0.0, 1.0);
-    final double btnScale = ui.lerpDouble(0.82, 1.0, btnFade)!;
-
-    // 3. Вычисление размеров и положения морфирующейся шторки и дока
+    // 2. Вычисление размеров и положения морфирующейся шторки и дока
     double curLeft, curBottom, curWidth, curHeight, topRadius, bottomRadius;
     double innerScale, innerOpacity;
     double dockLeft, dockBottom, dockWidth, dockHeight, dockRadius;
@@ -333,7 +353,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       final double easePos = math.pow(cp, 0.85).toDouble();
 
       curLeft = ui.lerpDouble(btnLeft, 0.0, easePos)!;
-      curBottom = ui.lerpDouble(btnBottom + bottomInset, 0.0, easePos)!;
+      curBottom = ui.lerpDouble(btnBottom, 0.0, easePos)!;
       curWidth = ui.lerpDouble(btnSize, vw, easeWidth)!;
       curHeight = ui.lerpDouble(btnSize, halfHeight, easeHeight)!;
 
@@ -347,7 +367,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       // Нижний док вырастает из того же круга кнопки
       final double dockEase = math.pow(cp, 0.76).toDouble();
       dockLeft = ui.lerpDouble(btnLeft, 12.0, dockEase)!;
-      dockBottom = ui.lerpDouble(btnBottom + bottomInset, 16.0 + bottomInset, dockEase)!;
+      dockBottom = ui.lerpDouble(btnBottom, 16.0 + bottomInset, dockEase)!;
       dockWidth = ui.lerpDouble(btnSize, vw - 24.0, dockEase)!;
       dockHeight = ui.lerpDouble(btnSize, 64.0, dockEase)!;
       dockRadius = ui.lerpDouble(btnRadius, 32.0, dockEase)!;
@@ -379,56 +399,32 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     final double sheetAlpha = (p * 12.0).clamp(0.0, 1.0);
     final bool showDateBadge = p > 1.35 || (_scrollController.hasClients && _scrollController.offset > 10);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 1. Scrim затемнение
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _closeSheet,
-              child: Container(
-                color: Colors.black.withOpacity(scrimOpacity),
-              ),
-            ),
-          ),
-
-          // 2. Исходная кнопка со скрепкой (растворяется при старте морфинга)
-          if (btnFade > 0.01)
-            Positioned(
-              left: btnLeft,
-              bottom: btnBottom + bottomInset,
-              child: Transform.scale(
-                scale: btnScale,
-                child: Opacity(
-                  opacity: btnFade,
-                  child: Container(
-                    width: btnSize,
-                    height: btnSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF191919),
-                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 3)),
-                      ],
-                    ),
-                    child: Center(
-                      child: Transform.rotate(
-                        angle: -math.pi / 4,
-                        child: const Icon(Icons.attach_file_rounded, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _closeSheet();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 1. Scrim затемнение
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _closeSheet,
+                child: Container(
+                  color: Colors.black.withOpacity(scrimOpacity),
                 ),
               ),
             ),
 
-          // 3. Главная шторка (морф из круга кнопки)
-          if (sheetAlpha > 0.01)
-            Positioned(
-              left: curLeft,
+            // 2. Главная шторка (морф из круга кнопки)
+            if (sheetAlpha > 0.01)
+              Positioned(
+                left: curLeft,
               bottom: curBottom,
               width: curWidth,
               height: curHeight,
@@ -481,6 +477,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                           final double morphRange = vh * 0.55;
                           _progress = (_progress - dy / morphRange).clamp(0.0, 2.0);
                         }
+                        widget.onProgressChanged?.call(_progress);
                         setState(() {});
                       }
                     },
@@ -829,7 +826,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                                 label: 'Подарок',
                                 icon: Icons.card_giftcard_rounded,
                                 onTap: () {
-                                  _closeSheet();
+                                  Navigator.of(context).pop();
                                   widget.onOpenGifts?.call();
                                 },
                               ),
@@ -865,6 +862,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             ),
         ],
       ),
+    ),
     );
   }
 

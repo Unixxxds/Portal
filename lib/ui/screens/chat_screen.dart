@@ -83,10 +83,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final Animation<double> _sendBtnScaleAnim;
   late final Animation<Offset> _sendBtnArrowSlideAnim;
 
-  // Attachment paperclip button animations (Telegram style)
-  late final AnimationController _attachBtnAnimController;
-  late final Animation<double> _attachRotateAnim;
-  late final Animation<double> _attachScaleAnim;
+  // Attachment paperclip button progress notifier (0.0 = закрыто, 1.0 = half, 2.0 = full)
+  final ValueNotifier<double> _pickerProgress = ValueNotifier<double>(0.0);
 
   final Set<int> _seenMessageIds = {};
   bool _isInitialMessagesRecorded = false;
@@ -115,19 +113,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       TweenSequenceItem(tween: Tween(begin: Offset.zero, end: const Offset(0.0, -0.35)), weight: 50),
       TweenSequenceItem(tween: Tween(begin: const Offset(0.0, 0.25), end: Offset.zero), weight: 50),
     ]).animate(CurvedAnimation(parent: _sendBtnAnimController, curve: Curves.easeInOut));
-
-    // Telegram paperclip button rotation & pop animation
-    _attachBtnAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 280),
-    );
-    _attachRotateAnim = Tween<double>(begin: -math.pi / 4, end: 0.0).animate(
-      CurvedAnimation(parent: _attachBtnAnimController, curve: Curves.easeOutBack),
-    );
-    _attachScaleAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.82), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 0.82, end: 1.0), weight: 60),
-    ]).animate(CurvedAnimation(parent: _attachBtnAnimController, curve: Curves.easeInOut));
 
     // Предзагрузка фото в фоне сразу при входе в чат (0 мс ожидания при клике на скрепку)
     GalleryService.instance.preload();
@@ -285,7 +270,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _rippleController.dispose();
     _blinkController.dispose();
     _sendBtnAnimController.dispose();
-    _attachBtnAnimController.dispose();
+    _pickerProgress.dispose();
     super.dispose();
   }
 
@@ -3750,31 +3735,40 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 // 1. Слева: круглая кнопка скрепки (анимированная как в Telegram)
                 GestureDetector(
                   onTap: _openPhotoGallerySheet,
-                  child: AnimatedBuilder(
-                    animation: _attachBtnAnimController,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: _attachScaleAnim.value,
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: _attachBtnAnimController.value > 0.1
-                                ? const Color(0xFF2C2C2E)
-                                : const Color(0xFF191919),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0x1AFFFFFF),
-                              width: 1.0,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _pickerProgress,
+                    builder: (context, progress, child) {
+                      // При открытии фото-меню кнопка плавно растворяется в рождающийся круг шторки (первые 25% прогресса)
+                      final double t = (progress * 4.0).clamp(0.0, 1.0);
+                      final double btnFade = 1.0 - t;
+                      final double btnScale = 1.0 - (0.18 * t);
+                      final double rotateAngle = -math.pi / 4 * (1.0 - t);
+
+                      return Opacity(
+                        opacity: btnFade,
+                        child: Transform.scale(
+                          scale: btnScale,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: progress > 0.05
+                                  ? const Color(0xFF2C2C2E)
+                                  : const Color(0xFF191919),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0x1AFFFFFF),
+                                width: 1.0,
+                              ),
                             ),
-                          ),
-                          child: Center(
-                            child: Transform.rotate(
-                              angle: _attachRotateAnim.value,
-                              child: const Icon(
-                                Icons.attach_file_rounded,
-                                color: Colors.white,
-                                size: 20,
+                            child: Center(
+                              child: Transform.rotate(
+                                angle: rotateAngle,
+                                child: const Icon(
+                                  Icons.attach_file_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                               ),
                             ),
                           ),
@@ -4068,20 +4062,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _openPhotoGallerySheet() async {
-    _attachBtnAnimController.forward();
+    FocusScope.of(context).unfocus();
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final bottomPadding = bottomInset > 0
+        ? 8.0
+        : (mediaQuery.padding.bottom > 0 ? mediaQuery.padding.bottom : 10.0);
+
     await PhotoPickerBottomSheet.show(
       context,
+      btnLeft: 10.0,
+      btnBottom: bottomPadding,
+      btnSize: 40.0,
+      btnRadius: 20.0,
+      onProgressChanged: (p) {
+        _pickerProgress.value = p;
+      },
       onSend: (files, caption) async {
         Navigator.of(context).pop();
         await _sendSelectedPhotos(files, caption);
       },
       onOpenGifts: () {
-        Navigator.of(context).pop();
         SendGiftModal.show(context, chat: widget.chat);
       },
     );
     if (mounted) {
-      _attachBtnAnimController.reverse();
+      _pickerProgress.value = 0.0;
     }
   }
 
