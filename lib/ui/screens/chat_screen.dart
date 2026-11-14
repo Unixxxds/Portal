@@ -3706,7 +3706,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           // Текстовое поле ввода
                           Expanded(
@@ -3736,25 +3736,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   height: 1.25,
                                 ),
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 9),
+                                contentPadding: EdgeInsets.symmetric(vertical: 8),
                                 isDense: true,
                               ),
                             ),
                           ),
 
                           // Смайлик справа внутри пузыря
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: const Icon(
-                                Icons.sentiment_satisfied_rounded,
-                                color: Color(0xFF929292),
-                                size: 22,
-                              ),
-                              onPressed: () {},
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(
+                              Icons.sentiment_satisfied_rounded,
+                              color: Color(0xFF929292),
+                              size: 22,
                             ),
+                            onPressed: () {},
                           ),
                         ],
                       ),
