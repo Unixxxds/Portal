@@ -30,6 +30,9 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
   bool _isSearching = false;
   List<Map<String, dynamic>> _remoteResults = [];
 
+  int _selectedFolderIndex = 0;
+  final List<String> _folders = const ['Все', 'Личные', 'Каналы', 'Группы'];
+
   late final AnimationController _shimmerController;
   late final Animation<double> _shimmerAnimation;
 
@@ -444,6 +447,9 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         return DateFormat('HH:mm').format(dt);
       } else if (today.difference(msgDay).inDays == 1) {
         return 'Вчера';
+      } else if (today.difference(msgDay).inDays < 7 && today.difference(msgDay).inDays > 1) {
+        const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+        return days[dt.weekday - 1];
       } else if (now.year == dt.year) {
         return DateFormat('d MMM', 'ru').format(dt);
       } else {
@@ -461,6 +467,10 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final user = auth.currentUser;
 
     final filteredChats = chatProvider.chats.where((c) {
+      if (_selectedFolderIndex == 1 && !c.isDirect) return false;
+      if (_selectedFolderIndex == 2 && !c.isChannel) return false;
+      if (_selectedFolderIndex == 3 && (c.isDirect || c.isChannel)) return false;
+
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase().replaceFirst(RegExp(r'^@+'), '');
       return c.title.toLowerCase().contains(q) ||
@@ -470,135 +480,139 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppTheme.appBg,
+      backgroundColor: Colors.black,
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
             // =================================================================
-            // HEADER (1:1 with Reference Screenshot)
+            // HEADER (Centered "Чаты", "Изм." on left, (+) and blue edit on right)
             // =================================================================
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 16, 10),
-              child: Row(
-                children: [
-                  // Title: "Чаты" in SF Pro Display Heavy/Bold
-                  const Text(
-                    'Чаты',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplay,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const Spacer(),
-
-                  // Sun / Theme Toggle (Graphite #191919)
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF191919),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.wb_sunny_outlined,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-
-                  // Plus (+) New Chat Button (Graphite #191919)
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF191919),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 22,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              child: SizedBox(
+                height: 40,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Left: "Изм." edit button
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: GestureDetector(
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Управление чатами'),
+                              duration: Duration(seconds: 1),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1C1C1E),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const Text(
+                            'Изм.',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontDisplay,
+                              color: Colors.white,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
-                      onPressed: () => _handleCreateChannel(context),
                     ),
-                  ),
-                  const SizedBox(width: 10),
 
-                  // AI Assistant / Profile Avatar with online green dot (matching reference)
-                  GestureDetector(
-                    onTap: widget.onOpenProfile,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF191919),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'ai',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontDisplay,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
+                    // Center: "Чаты" title (smaller, centered)
+                    const Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Чаты',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                          color: Colors.white,
                         ),
-                        Positioned(
-                          right: -1,
-                          bottom: -1,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF22C55E),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF090909),
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+
+                    // Right: (+) New Channel / Chat and Blue Pencil Compose button
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () => _handleCreateChannel(context),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF1C1C1E),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.add_rounded,
+                                  color: Colors.white,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _handleCreateChannel(context),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF2A85FF),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.edit_square,
+                                  color: Colors.white,
+                                  size: 17,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
             // =================================================================
-            // SEARCH BAR (1:1 with Reference Screenshot)
+            // SEARCH BAR (Telegram iOS rounded search)
             // =================================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF191919),
-                  borderRadius: BorderRadius.circular(16),
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.search_rounded,
-                      color: Color(0xFF929292),
-                      size: 20,
+                      color: Color(0xFF8E8E93),
+                      size: 19,
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _searchController,
@@ -612,7 +626,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                           hintText: 'Поиск',
                           hintStyle: TextStyle(
                             fontFamily: AppTheme.fontText,
-                            color: Color(0xFF929292),
+                            color: Color(0xFF8E8E93),
                             fontSize: 15,
                           ),
                           border: InputBorder.none,
@@ -627,13 +641,58 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                           _searchController.clear();
                           _onSearchChanged('');
                         },
-                        child: const Icon(Icons.cancel_rounded, color: Color(0xFF929292), size: 18),
+                        child: const Icon(Icons.cancel_rounded, color: Color(0xFF8E8E93), size: 18),
                       ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+
+            // =================================================================
+            // FOLDER TABS (Все, Личные, Каналы, Группы)
+            // =================================================================
+            if (_searchQuery.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 6),
+                child: SizedBox(
+                  height: 32,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _folders.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final isSelected = _selectedFolderIndex == index;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedFolderIndex = index;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: isSelected ? const Color(0xFF1C1C1E) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _folders[index],
+                              style: TextStyle(
+                                fontFamily: AppTheme.fontDisplay,
+                                color: isSelected ? Colors.white : const Color(0xFF8E8E93),
+                                fontSize: 14,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            const SizedBox(height: 2),
 
             // =================================================================
             // CHATS LIST OR SEARCH RESULTS
@@ -835,184 +894,196 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final isChannel = chat.isChannel;
     final isVerified = chat.isVerified;
     final isPremium = chat.isPremium;
+    final isPinned = chat.isPinned;
     final chatProvider = context.watch<ChatProvider>();
     final isTyping = chatProvider.isUserTyping(chat.id);
     final isOnline = chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline;
     final timeStr = _formatMessageTime(chat.lastMessageTime);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ChatScreen(chat: chat),
-              ),
-            );
-          },
-          onLongPress: () => _showChatContextMenu(context, chat),
-          splashColor: const Color(0x0FFFFFFF),
-          highlightColor: const Color(0x08FFFFFF),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                // Circular Avatar
-                AvatarWidget(
-                  avatarUrl: chat.avatar,
-                  title: chat.title,
-                  size: 52,
-                  isOnline: isOnline,
-                  isSaved: isSaved,
-                  isChannel: isChannel,
+    // Pinned chats have darker graphite background (#1C1C1C) matching reference screenshot
+    // Unpinned chats have pitch-black background (Colors.black)
+    final tileBg = isPinned ? const Color(0xFF1C1C1C) : Colors.black;
+
+    return Container(
+      color: tileBg,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(chat: chat),
                 ),
-                const SizedBox(width: 14),
+              );
+            },
+            onLongPress: () => _showChatContextMenu(context, chat),
+            splashColor: const Color(0x0FFFFFFF),
+            highlightColor: const Color(0x08FFFFFF),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Circular Avatar
+                  AvatarWidget(
+                    avatarUrl: chat.avatar,
+                    title: chat.title,
+                    size: 52,
+                    isOnline: isOnline,
+                    isSaved: isSaved,
+                    isChannel: isChannel,
+                  ),
+                  const SizedBox(width: 13),
 
-                // Middle info: Title + Last message preview
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          // Megaphone icon for channels
-                          if (isChannel && !isSaved) ...[
-                            const Icon(
-                              Icons.campaign_outlined,
-                              color: Color(0xFF929292),
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-
-                          // For users: verification badge (dev or user) is to the LEFT of nickname
-                          if (!isChannel && isVerified) ...[
-                            VerificationBadge(verification: chat.effectiveVerification, size: 18.5),
-                            const SizedBox(width: 5),
-                          ],
-
-                          // Title
-                          Flexible(
-                            child: Text(
-                              chat.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: AppTheme.fontDisplay,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                letterSpacing: -0.2,
+                  // Middle info: Title + Last message preview
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            // Megaphone icon for channels
+                            if (isChannel && !isSaved) ...[
+                              const Icon(
+                                Icons.campaign_outlined,
+                                color: Color(0xFF8E8E93),
+                                size: 16,
                               ),
-                            ),
-                          ),
+                              const SizedBox(width: 4),
+                            ],
 
-                          // For channels: verification badge is to the RIGHT of title
-                          if (isChannel && isVerified) ...[
-                            const SizedBox(width: 5),
-                            VerificationBadge(verification: chat.effectiveVerification, size: 18.5),
-                          ],
+                            // For users: verification badge (dev or user) is to the LEFT of nickname
+                            if (!isChannel && isVerified) ...[
+                              VerificationBadge(verification: chat.effectiveVerification, size: 18.5),
+                              const SizedBox(width: 5),
+                            ],
 
-                          // For users: premium star is to the RIGHT of nickname
-                          if (!isChannel && isPremium) ...[
-                            const SizedBox(width: 5),
-                            const PremiumBadge(size: 18.5),
-                          ],
-
-                          // Time right next to name (matching reference)
-                          if (timeStr.isNotEmpty && !isChannel && !isSaved) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              timeStr,
-                              style: const TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                color: Color(0xFF929292),
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      Row(
-                        children: [
-                          // Last Message preview or typing status
-                          Expanded(
-                            child: isTyping
-                                ? const TelegramTypingIndicator(
-                                    fontSize: 13.5,
-                                    dotSize: 4.5,
-                                    color: Color(0xFF007AFF),
-                                  )
-                                : Text(
-                                    chat.lastMessageText.isNotEmpty
-                                        ? chat.displayLastMessage
-                                        : (isSaved ? '😜' : 'Нет сообщений'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontFamily: AppTheme.fontText,
-                                      color: Color(0xFF929292),
-                                      fontSize: 14,
-                                      height: 1.25,
-                                    ),
-                                  ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Chevron right for channels / saved, or unread / pin
-                          if (chat.isPinned)
-                            Transform.rotate(
-                              angle: 0.785,
-                              child: const Icon(
-                                Icons.push_pin_rounded,
-                                color: Color(0xFF929292),
-                                size: 14,
-                              ),
-                            )
-                          else if (chat.unreadCount > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                            // Title
+                            Flexible(
                               child: Text(
-                                chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
+                                chat.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Color(0xFF090909),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  fontFamily: AppTheme.fontDisplay,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  letterSpacing: -0.2,
                                 ),
                               ),
-                            )
-                          else if (isChannel || isSaved)
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              color: Color(0xFF4B4B4B),
-                              size: 20,
                             ),
-                        ],
-                      ),
+
+                            // For channels: verification badge is to the RIGHT of title
+                            if (isChannel && isVerified) ...[
+                              const SizedBox(width: 5),
+                              VerificationBadge(verification: chat.effectiveVerification, size: 18.5),
+                            ],
+
+                            // For users: premium star is to the RIGHT of nickname
+                            if (!isChannel && isPremium) ...[
+                              const SizedBox(width: 5),
+                              const PremiumBadge(size: 18.5),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+
+                        // Last Message preview or typing status
+                        isTyping
+                            ? const TelegramTypingIndicator(
+                                fontSize: 13.5,
+                                dotSize: 4.5,
+                                color: Color(0xFF2A85FF),
+                              )
+                            : Text(
+                                chat.lastMessageText.isNotEmpty
+                                    ? chat.displayLastMessage
+                                    : (isSaved ? '😜' : 'Нет сообщений'),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  color: Color(0xFF8E8E93),
+                                  fontSize: 14,
+                                  height: 1.25,
+                                ),
+                              ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Right side: Time strictly at top-right corner, Pin or Unread counter at bottom-right
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Time in the top-right corner
+                      if (timeStr.isNotEmpty)
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            color: Color(0xFF8E8E93),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+
+                      // Pin icon or Unread counter or chevron
+                      if (isPinned)
+                        Transform.rotate(
+                          angle: 0.785,
+                          child: const Icon(
+                            Icons.push_pin_rounded,
+                            color: Color(0xFF8E8E93),
+                            size: 16,
+                          ),
+                        )
+                      else if (chat.unreadCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A85FF),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else if (isChannel || isSaved)
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF4B4B4B),
+                          size: 20,
+                        )
+                      else
+                        const SizedBox(height: 16),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        const Divider(
-          height: 1,
-          thickness: 0.6,
-          color: Color(0x14FFFFFF),
-          indent: 82,
-          endIndent: 0,
-        ),
-      ],
+          Divider(
+            height: 0.6,
+            thickness: 0.6,
+            color: isPinned ? const Color(0xFF2C2C2E) : const Color(0x14FFFFFF),
+            indent: 81,
+            endIndent: 0,
+          ),
+        ],
+      ),
     );
   }
 
