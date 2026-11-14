@@ -2805,42 +2805,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
                   if (caption.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FormattedMessageText(
-                            text: caption,
-                            messageId: msg.id,
-                            style: const TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              color: Colors.white,
-                              fontSize: 14.5,
-                              height: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
+                      padding: EdgeInsets.fromLTRB(12, 8, isMe ? 18 : 12, 8),
+                      child: Builder(
+                        builder: (context) {
+                          final timeColor = isMe ? const Color(0xCCFFFFFF) : const Color(0xFF929292);
+                          final timeWidget = Row(
                             mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const Spacer(),
                               if (msg.isEdited) ...[
-                                const Text(
+                                Text(
                                   'изменено ',
                                   style: TextStyle(
                                     fontFamily: AppTheme.fontText,
                                     fontSize: 10.5,
-                                    color: Color(0xFF929292),
+                                    color: timeColor,
                                   ),
                                 ),
                               ],
                               Text(
                                 _formatMessageTime(msg.createdAt),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: AppTheme.fontText,
                                   fontSize: 11,
-                                  color: Color(0xFF929292),
+                                  color: timeColor,
                                 ),
                               ),
                               if (isMe) ...[
@@ -2848,12 +2836,57 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 Icon(
                                   msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
                                   size: 13,
-                                  color: const Color(0xFF929292),
+                                  color: timeColor,
                                 ),
                               ],
                             ],
-                          ),
-                        ],
+                          );
+
+                          if (!caption.contains('\n') && caption.length < 24) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    caption,
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontText,
+                                      color: Colors.white,
+                                      fontSize: 14.5,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 1.0),
+                                  child: timeWidget,
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              FormattedMessageText(
+                                text: caption,
+                                messageId: msg.id,
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  color: Colors.white,
+                                  fontSize: 14.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Align(
+                                alignment: Alignment.bottomRight,
+                                child: timeWidget,
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                 ],

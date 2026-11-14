@@ -162,21 +162,24 @@ Path buildTelegramBubblePath({
       clockwise: true,
     );
 
-    // 4. Right vertical wall down to where the tail begins
-    path.lineTo(w - tw, h - 18.0);
+    // 4. Right vertical wall down to where the tail curve begins
+    final double tailStartY = (h - 18.0).clamp(r, h);
+    path.lineTo(w - tw, tailStartY);
 
     // 5. Outer smooth curve sweeping down to the sharp tail tip at (w, h)
+    // First control point has dx == w - tw, ensuring a 100% seamless C1 vertical tangent
     path.cubicTo(
-      w - tw + 1.0, h - 10.0,
-      w - 3.5, h - 2.0,
+      w - tw, tailStartY + (h - tailStartY) * 0.45,
+      w - 2.5, h - 2.0,
       w, h,
     );
 
-    // 6. Inner scoop curve from tip (w, h) arching into the bottom edge
+    // 6. Smooth return curve from tip (w, h) into the bottom baseline at (w - tw - 16.0, h)
+    // Connects horizontally and smoothly without any sharp crease or deep gouge
     path.cubicTo(
-      w - 9.5, h,
-      w - 18.5, h - 9.0,
-      w - tw - 19.0, h,
+      w - 4.5, h,
+      w - tw - 6.0, h - 0.5,
+      w - tw - 16.0, h,
     );
 
     // 7. Bottom flat edge to bottom-left corner
@@ -227,21 +230,23 @@ Path buildTelegramBubblePath({
       clockwise: true,
     );
 
-    // 6. Bottom flat edge to inner scoop start
-    path.lineTo(tw + 19.0, h);
+    // 6. Bottom flat edge to return curve start at tw + 16.0
+    path.lineTo(tw + 16.0, h);
 
-    // 7. Inner scoop curve arching into the tail tip at (0, h)
+    // 7. Smooth return curve arching horizontally into the tail tip at (0, h)
     path.cubicTo(
-      18.5, h - 9.0,
-      9.5, h,
+      tw + 6.0, h - 0.5,
+      4.5, h,
       0, h,
     );
 
-    // 8. Outer smooth curve sweeping from tip (0, h) back up to left wall
+    // 8. Outer smooth curve sweeping from tip (0, h) back up to left wall at (tw, tailStartY)
+    // End control point has dx == tw, ensuring a 100% seamless C1 vertical tangent
+    final double tailStartY = (h - 18.0).clamp(r, h);
     path.cubicTo(
-      3.5, h - 2.0,
-      tw - 1.0, h - 10.0,
-      tw, h - 18.0,
+      2.5, h - 2.0,
+      tw, tailStartY + (h - tailStartY) * 0.45,
+      tw, tailStartY,
     );
 
     // 9. Left vertical wall
