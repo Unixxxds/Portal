@@ -28,6 +28,7 @@ import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_message_entrance.dart';
 import '../widgets/telegram_profile_route.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
+import '../widgets/telegram_typing_indicator.dart';
 import '../widgets/voice_message_bubble.dart';
 import 'user_profile_screen.dart';
 import 'post_comments_screen.dart';
@@ -1127,18 +1128,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                     ],
                                   ),
                                   const SizedBox(height: 1),
-                                  Text(
-                                    statusText,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.fontText,
+                                  if (isTyping)
+                                    const TelegramTypingIndicator(
                                       fontSize: 11.5,
-                                      fontWeight: FontWeight.w500,
-                                      color: statusColor,
-                                      height: 1.15,
+                                      dotSize: 4.0,
+                                      color: Color(0xFF007AFF),
+                                    )
+                                  else
+                                    Text(
+                                      statusText,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: AppTheme.fontText,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: statusColor,
+                                        height: 1.15,
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),

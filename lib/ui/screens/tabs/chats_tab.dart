@@ -11,6 +11,7 @@ import '../../../core/user_activity_helper.dart';
 import '../../theme.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
+import '../../widgets/telegram_typing_indicator.dart';
 import '../chat_screen.dart';
 import '../create_channel_screen.dart';
 
@@ -939,18 +940,10 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                           // Last Message preview or typing status
                           Expanded(
                             child: isTyping
-                                ? const Text(
-                                    'печатает...',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.fontText,
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontStyle: FontStyle.italic,
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.25,
-                                    ),
+                                ? const TelegramTypingIndicator(
+                                    fontSize: 13.5,
+                                    dotSize: 4.5,
+                                    color: Color(0xFF007AFF),
                                   )
                                 : Text(
                                     chat.lastMessageText.isNotEmpty
