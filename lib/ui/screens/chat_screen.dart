@@ -16,6 +16,7 @@ import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/gallery_service.dart';
 import '../../services/websocket_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
@@ -81,6 +82,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final AnimationController _sendBtnAnimController;
   late final Animation<double> _sendBtnScaleAnim;
   late final Animation<Offset> _sendBtnArrowSlideAnim;
+
+  // Attachment paperclip button animations (Telegram style)
+  late final AnimationController _attachBtnAnimController;
+  late final Animation<double> _attachRotateAnim;
+  late final Animation<double> _attachScaleAnim;
+
   final Set<int> _seenMessageIds = {};
   bool _isInitialMessagesRecorded = false;
   ChatProvider? _chatProvider;
@@ -108,6 +115,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       TweenSequenceItem(tween: Tween(begin: Offset.zero, end: const Offset(0.0, -0.35)), weight: 50),
       TweenSequenceItem(tween: Tween(begin: const Offset(0.0, 0.25), end: Offset.zero), weight: 50),
     ]).animate(CurvedAnimation(parent: _sendBtnAnimController, curve: Curves.easeInOut));
+
+    // Telegram paperclip button rotation & pop animation
+    _attachBtnAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _attachRotateAnim = Tween<double>(begin: -math.pi / 4, end: 0.0).animate(
+      CurvedAnimation(parent: _attachBtnAnimController, curve: Curves.easeOutBack),
+    );
+    _attachScaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.82), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 0.82, end: 1.0), weight: 60),
+    ]).animate(CurvedAnimation(parent: _attachBtnAnimController, curve: Curves.easeInOut));
+
+    // Предзагрузка фото в фоне сразу при входе в чат (0 мс ожидания при клике на скрепку)
+    GalleryService.instance.preload();
 
     _rippleController = AnimationController(
       vsync: this,
@@ -262,6 +285,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _rippleController.dispose();
     _blinkController.dispose();
     _sendBtnAnimController.dispose();
+    _attachBtnAnimController.dispose();
     super.dispose();
   }
 
@@ -3723,30 +3747,40 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!_isRecordingVoice) ...[
-                // 1. Слева: круглая кнопка скрепки
+                // 1. Слева: круглая кнопка скрепки (анимированная как в Telegram)
                 GestureDetector(
                   onTap: _openPhotoGallerySheet,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF191919),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0x1AFFFFFF),
-                        width: 1.0,
-                      ),
-                    ),
-                    child: Center(
-                      child: Transform.rotate(
-                        angle: -math.pi / 4,
-                        child: const Icon(
-                          Icons.attach_file_rounded,
-                          color: Colors.white,
-                          size: 20,
+                  child: AnimatedBuilder(
+                    animation: _attachBtnAnimController,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _attachScaleAnim.value,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _attachBtnAnimController.value > 0.1
+                                ? const Color(0xFF2C2C2E)
+                                : const Color(0xFF191919),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0x1AFFFFFF),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Center(
+                            child: Transform.rotate(
+                              angle: _attachRotateAnim.value,
+                              child: const Icon(
+                                Icons.attach_file_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -4033,8 +4067,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _openPhotoGallerySheet() {
-    PhotoPickerBottomSheet.show(
+  Future<void> _openPhotoGallerySheet() async {
+    _attachBtnAnimController.forward();
+    await PhotoPickerBottomSheet.show(
       context,
       onSend: (files, caption) async {
         Navigator.of(context).pop();
@@ -4045,6 +4080,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         SendGiftModal.show(context, chat: widget.chat);
       },
     );
+    if (mounted) {
+      _attachBtnAnimController.reverse();
+    }
   }
 
   Future<void> _sendSelectedPhotos(List<File> files, String caption) async {
