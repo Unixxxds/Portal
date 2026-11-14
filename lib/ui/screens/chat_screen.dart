@@ -3724,7 +3724,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               style: const TextStyle(
                                 fontFamily: AppTheme.fontText,
                                 color: Colors.white,
-                                fontSize: 15.5,
+                                fontSize: 15,
                                 height: 1.25,
                               ),
                               decoration: const InputDecoration(
@@ -3732,7 +3732,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 hintStyle: TextStyle(
                                   fontFamily: AppTheme.fontText,
                                   color: Color(0xFF929292),
-                                  fontSize: 15.5,
+                                  fontSize: 15,
                                   height: 1.25,
                                 ),
                                 border: InputBorder.none,
@@ -3741,17 +3741,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
+                          const SizedBox(width: 4),
 
-                          // Смайлик справа внутри пузыря
-                          IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(
-                              Icons.sentiment_satisfied_rounded,
-                              color: Color(0xFF929292),
-                              size: 22,
+                          // Смайлик справа внутри пузыря (GestureDetector без 48px ограничений)
+                          GestureDetector(
+                            onTap: () {},
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 2),
+                              child: Icon(
+                                Icons.sentiment_satisfied_rounded,
+                                color: Color(0xFF929292),
+                                size: 22,
+                              ),
                             ),
-                            onPressed: () {},
                           ),
                         ],
                       ),
