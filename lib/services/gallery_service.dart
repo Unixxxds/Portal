@@ -170,3 +170,4 @@ class GalleryService extends ChangeNotifier {
     notifyListeners();
   }
 }
+
