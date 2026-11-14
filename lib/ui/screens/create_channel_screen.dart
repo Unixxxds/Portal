@@ -244,7 +244,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         final parsedId = chatId is int ? chatId : int.tryParse(chatId.toString());
         final currentUserId = context.read<AuthProvider>().currentUser?.id;
         if (parsedId != null) {
-          var createdChat = chatProvider.chats.where((c) => c.id == parsedId).firstOrNull;
+          var createdChat = chatProvider.chats.where((c) => c.isChannel && c.id == parsedId).firstOrNull;
           createdChat ??= Chat(
             id: parsedId,
             title: title,

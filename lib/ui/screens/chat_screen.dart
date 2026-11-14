@@ -59,6 +59,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   int? _channelOwnerId;
   bool _canPostToChannel = false;
   bool _isSendingSticker = false;
+  String? _liveTitle;
+  String? _liveAvatar;
+  String? _liveUsername;
   final Set<int> _viewedMessageIds = {};
   int _lastRenderedMessageCount = 0;
   bool _hasInitiallyScrolled = false;
@@ -121,6 +124,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _liveVerification = widget.chat.effectiveVerification;
     _liveIsPremium = widget.chat.isPremium;
     _channelOwnerId = widget.chat.ownerId;
+    _liveTitle = widget.chat.title;
+    _liveAvatar = widget.chat.avatar;
+    _liveUsername = widget.chat.username;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -135,7 +141,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _checkUserPresence();
       await chatProv.openChat(
         widget.chat.id,
-        participantId: widget.chat.participantId,
+        participantId: widget.chat.isChannel ? null : widget.chat.participantId,
+        isChannel: widget.chat.isChannel,
       );
       if (mounted) {
         _jumpToBottomFast();
@@ -155,6 +162,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           final isOwner = (ownerId != null && currentUserId != null && ownerId == currentUserId) ||
               (widget.chat.ownerId != null && currentUserId != null && widget.chat.ownerId == currentUserId);
           final canSend = data['can_send_messages'] == true || data['can_send_messages'] == 1 || isOwner;
+          final title = data['title']?.toString();
+          final avatar = (data['avatar_url'] ?? data['avatar'])?.toString();
+          final uname = data['username']?.toString();
 
           setState(() {
             if (data['is_subscribed'] != null) {
@@ -172,9 +182,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             if (verif != null && verif.isNotEmpty && verif != 'none') {
               _liveVerification = verif;
             }
+            if (title != null && title.isNotEmpty) {
+              _liveTitle = title;
+            }
+            if (avatar != null && avatar.isNotEmpty) {
+              _liveAvatar = avatar;
+            }
+            if (uname != null && uname.isNotEmpty) {
+              _liveUsername = uname;
+            }
           });
-          if (verif != null && verif.isNotEmpty && verif != 'none') {
-            context.read<ChatProvider>().updateChatVerification(
+
+          final chatProv = context.read<ChatProvider>();
+          final existing = chatProv.chats.where((c) => c.isChannel && c.id == widget.chat.id).firstOrNull;
+          if (existing != null) {
+            final updated = existing.copyWith(
+              title: (title != null && title.isNotEmpty) ? title : existing.title,
+              avatar: (avatar != null && avatar.isNotEmpty) ? avatar : existing.avatar,
+              username: (uname != null && uname.isNotEmpty) ? uname : existing.username,
+              subscribersCount: _subscribersCount,
+              isSubscribed: _isSubscribed,
+              verification: (verif != null && verif.isNotEmpty && verif != 'none') ? verif : existing.verification,
+            );
+            chatProv.addOrUpdateChat(updated);
+          } else if (verif != null && verif.isNotEmpty && verif != 'none') {
+            chatProv.updateChatVerification(
               chatId: widget.chat.id,
               verification: verif,
             );
@@ -575,7 +607,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     final isTyping = chatProvider.isUserTyping(widget.chat.id);
     final currentChat = chatProvider.chats.firstWhere(
-      (c) => c.id == widget.chat.id,
+      (c) => c.isChannel == widget.chat.isChannel && c.id == widget.chat.id,
       orElse: () => widget.chat,
     );
     final isChannelOwner = currentChat.isChannel &&
@@ -962,7 +994,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ? Colors.white
         : (isOnline ? AppTheme.statusOnline : const Color(0xFF929292));
 
-    final rawTitle = chat.title.startsWith('📢') ? chat.title.substring(1).trim() : chat.title;
+    final headerTitle = (chat.isChannel && _liveTitle != null && _liveTitle!.isNotEmpty)
+        ? _liveTitle!
+        : chat.title;
+    final headerAvatar = (chat.isChannel && _liveAvatar != null && _liveAvatar!.isNotEmpty)
+        ? _liveAvatar!
+        : chat.avatar;
+    final rawTitle = headerTitle.startsWith('📢') ? headerTitle.substring(1).trim() : headerTitle;
     final displayTitle = rawTitle.isEmpty ? (chat.isChannel ? 'Канал' : 'Чат') : rawTitle;
 
     final effectiveVerif = (_liveVerification != null && _liveVerification != 'none' && _liveVerification!.isNotEmpty)
@@ -1074,7 +1112,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 );
                               },
                               child: AvatarWidget(
-                                avatarUrl: chat.avatar,
+                                avatarUrl: headerAvatar,
                                 title: displayTitle,
                                 size: 36,
                                 isOnline: isOnline,
@@ -1658,12 +1696,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }).catchError((_) {});
     }
 
-    final channelTitle = widget.chat.title.startsWith('📢')
-        ? widget.chat.title.substring(2).trim()
+    final rawPostTitle = (_liveTitle != null && _liveTitle!.isNotEmpty)
+        ? _liveTitle!
         : widget.chat.title;
-    final channelUsername = widget.chat.username != null && widget.chat.username!.isNotEmpty
-        ? '@${widget.chat.username!.replaceFirst('@', '')}'
+    final channelTitle = rawPostTitle.startsWith('📢')
+        ? rawPostTitle.substring(2).trim()
+        : rawPostTitle;
+    final rawUname = (_liveUsername != null && _liveUsername!.isNotEmpty)
+        ? _liveUsername!
+        : (widget.chat.username ?? '');
+    final channelUsername = rawUname.isNotEmpty
+        ? '@${rawUname.replaceFirst('@', '')}'
         : '@channel';
+    final channelAvatar = (_liveAvatar != null && _liveAvatar!.isNotEmpty)
+        ? _liveAvatar!
+        : widget.chat.avatar;
 
     return GestureDetector(
       onLongPress: () => _showMessageContextMenu(msg),
@@ -1694,8 +1741,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           Row(
             children: [
               AvatarWidget(
-                avatarUrl: widget.chat.avatar,
-                title: widget.chat.title,
+                avatarUrl: channelAvatar,
+                title: channelTitle,
                 size: 36,
                 isChannel: true,
               ),

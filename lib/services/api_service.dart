@@ -150,12 +150,47 @@ class ApiService {
     }
   }
 
-  // 5. Загрузка истории сообщений чата
-  Future<List<Map<String, dynamic>>> getChatHistory(int chatId, {int? before, int limit = 50}) async {
+  // 5. Загрузка истории сообщений чата или постов канала
+  Future<List<Map<String, dynamic>>> getChatHistory(int chatId, {int? before, int limit = 50, bool isChannel = false}) async {
+    final query = <String, dynamic>{'limit': limit};
+    if (before != null) query['before'] = before;
+
+    if (isChannel) {
+      try {
+        final response = await _dio.get(
+          '/api/channels/$chatId/posts',
+          queryParameters: query,
+        );
+        if (response.data is Map && response.data['posts'] is List && (response.data['posts'] as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response.data['posts']);
+        } else if (response.data is List && (response.data as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response.data);
+        }
+      } catch (_) {}
+
+      try {
+        final response = await _dio.get(
+          '/api/sync/chat/$chatId/history',
+          queryParameters: query,
+        );
+        if (response.data is Map && response.data['messages'] is List && (response.data['messages'] as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response.data['messages']);
+        }
+      } catch (_) {}
+
+      try {
+        final response = await _dio.get('/api/chats/$chatId/messages', queryParameters: query);
+        if (response.data is Map && response.data['messages'] is List && (response.data['messages'] as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response.data['messages']);
+        } else if (response.data is List && (response.data as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response.data);
+        }
+      } catch (_) {}
+
+      return [];
+    }
+
     try {
-      final query = <String, dynamic>{'limit': limit};
-      if (before != null) query['before'] = before;
-      
       final response = await _dio.get(
         '/api/sync/chat/$chatId/history',
         queryParameters: query,
@@ -166,18 +201,9 @@ class ApiService {
     } catch (_) {}
 
     try {
-      final response = await _dio.get('/api/chats/$chatId/messages');
+      final response = await _dio.get('/api/chats/$chatId/messages', queryParameters: query);
       if (response.data is Map && response.data['messages'] is List && (response.data['messages'] as List).isNotEmpty) {
         return List<Map<String, dynamic>>.from(response.data['messages']);
-      } else if (response.data is List && (response.data as List).isNotEmpty) {
-        return List<Map<String, dynamic>>.from(response.data);
-      }
-    } catch (_) {}
-
-    try {
-      final response = await _dio.get('/api/channels/$chatId/posts');
-      if (response.data is Map && response.data['posts'] is List && (response.data['posts'] as List).isNotEmpty) {
-        return List<Map<String, dynamic>>.from(response.data['posts']);
       } else if (response.data is List && (response.data as List).isNotEmpty) {
         return List<Map<String, dynamic>>.from(response.data);
       }

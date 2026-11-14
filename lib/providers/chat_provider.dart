@@ -135,18 +135,20 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> openChat(int chatId, {int? participantId}) async {
+  Future<void> openChat(int chatId, {int? participantId, bool isChannel = false}) async {
     final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
     _activeChatId = chatId;
-    _activeChatParticipantId = participantId;
+    _activeChatParticipantId = isChannel ? null : participantId;
 
     // Сбросить непрочитанные локально в БД и в UI (только для входящих!)
     await DatabaseHelper.instance.resetUnread(chatId, currentUserId: currentUserId);
-    if (participantId != null && participantId != chatId) {
+    if (!isChannel && participantId != null && participantId != chatId) {
       await DatabaseHelper.instance.resetUnread(participantId, currentUserId: currentUserId);
     }
     final chatIdx = _chats.indexWhere(
-      (c) => c.id == chatId || (participantId != null && (c.participantId == participantId || c.id == participantId)),
+      (c) => isChannel
+          ? (c.isChannel && c.id == chatId)
+          : (!c.isChannel && (c.id == chatId || (participantId != null && (c.participantId == participantId || c.id == participantId)))),
     );
     if (chatIdx != -1) {
       _chats[chatIdx] = _chats[chatIdx].copyWith(unreadCount: 0);
@@ -156,7 +158,7 @@ class ChatProvider with ChangeNotifier {
     // Оповещаем бэкенд и WebSocket о прочтении сообщений в чате
     ApiService.instance.markChatAsRead(chatId);
     WebSocketService.instance.markChatAsRead(chatId);
-    if (participantId != null && participantId != chatId) {
+    if (!isChannel && participantId != null && participantId != chatId) {
       ApiService.instance.markChatAsRead(participantId);
       WebSocketService.instance.markChatAsRead(participantId);
     }
@@ -164,7 +166,7 @@ class ChatProvider with ChangeNotifier {
     if (chatIdx != -1) {
       // Актуализируем статус пользователя (онлайн/был недавно)
       final chat = _chats[chatIdx];
-      final targetPId = participantId ?? chat.participantId;
+      final targetPId = isChannel ? null : (participantId ?? chat.participantId);
       if (!chat.isChannel && !chat.isSaved) {
         final targetId = targetPId ?? chat.id;
         ApiService.instance.getUserProfile(targetId).then((data) {
@@ -188,8 +190,23 @@ class ChatProvider with ChangeNotifier {
         ApiService.instance.getChannel(chatId).then((data) {
           if (data != null) {
             final verif = data['verification']?.toString();
-            if (verif != null && verif.isNotEmpty && verif != 'none') {
-              updateChatVerification(chatId: chatId, verification: verif);
+            final title = data['title']?.toString();
+            final avatar = (data['avatar_url'] ?? data['avatar'])?.toString();
+            final username = data['username']?.toString();
+            final subscribersCount = data['subscribers_count'] is int
+                ? data['subscribers_count'] as int
+                : int.tryParse(data['subscribers_count']?.toString() ?? '');
+
+            final idx = _chats.indexWhere((c) => c.isChannel && c.id == chatId);
+            if (idx != -1) {
+              _chats[idx] = _chats[idx].copyWith(
+                title: (title != null && title.isNotEmpty) ? title : _chats[idx].title,
+                avatar: (avatar != null && avatar.isNotEmpty) ? avatar : _chats[idx].avatar,
+                username: (username != null && username.isNotEmpty) ? username : _chats[idx].username,
+                verification: (verif != null && verif.isNotEmpty && verif != 'none') ? verif : _chats[idx].verification,
+                subscribersCount: subscribersCount ?? _chats[idx].subscribersCount,
+              );
+              notifyListeners();
             }
           }
         }).catchError((_) {});
@@ -199,10 +216,11 @@ class ChatProvider with ChangeNotifier {
     // Загружаем сообщения из SQLite (локальный кэш)
     final localMsgs = await DatabaseHelper.instance.getMessages(
       chatId,
-      alternateChatId: participantId,
+      alternateChatId: isChannel ? null : participantId,
+      isChannel: isChannel,
     );
     _messagesByChat[chatId] = localMsgs;
-    if (participantId != null && participantId != chatId) {
+    if (!isChannel && participantId != null && participantId != chatId) {
       _messagesByChat[participantId] = localMsgs;
     }
     notifyListeners();
@@ -212,11 +230,15 @@ class ChatProvider with ChangeNotifier {
 
     // Загружаем актуальную историю с сервера
     try {
-      var remoteMsgs = await ApiService.instance.getChatHistory(chatId);
-      if (remoteMsgs.isEmpty && participantId != null && participantId != chatId) {
-        remoteMsgs = await ApiService.instance.getChatHistory(participantId);
+      var remoteMsgs = await ApiService.instance.getChatHistory(chatId, isChannel: isChannel);
+      if (!isChannel && remoteMsgs.isEmpty && participantId != null && participantId != chatId) {
+        remoteMsgs = await ApiService.instance.getChatHistory(participantId, isChannel: false);
       }
       if (remoteMsgs.isNotEmpty) {
+        if (isChannel) {
+          // Если это канал, удаляем старые ошибочно закэшированные сообщения (например от direct бота)
+          await DatabaseHelper.instance.clearChatMessages(chatId);
+        }
         final List<Message> msgObjects = [];
         for (final m in remoteMsgs) {
           final msgObj = Message.fromJson(m, fallbackChatId: chatId);
@@ -240,14 +262,15 @@ class ChatProvider with ChangeNotifier {
         await DatabaseHelper.instance.insertMessages(msgObjects);
         final refreshedMsgs = await DatabaseHelper.instance.getMessages(
           chatId,
-          alternateChatId: participantId,
+          alternateChatId: isChannel ? null : participantId,
+          isChannel: isChannel,
         );
         _messagesByChat[chatId] = refreshedMsgs;
-        if (participantId != null && participantId != chatId) {
+        if (!isChannel && participantId != null && participantId != chatId) {
           _messagesByChat[participantId] = refreshedMsgs;
         }
         await DatabaseHelper.instance.resetUnread(chatId, currentUserId: currentUserId);
-        if (participantId != null && participantId != chatId) {
+        if (!isChannel && participantId != null && participantId != chatId) {
           await DatabaseHelper.instance.resetUnread(participantId, currentUserId: currentUserId);
         }
         notifyListeners();
@@ -285,10 +308,10 @@ class ChatProvider with ChangeNotifier {
       }
     }
 
-    // 2. Обновляем в локальном списке чатов
+    // 2. Обновляем в локальном списке чатов (только для обычных чатов, не каналов!)
     bool changed = false;
     for (int i = 0; i < _chats.length; i++) {
-      if (_chats[i].participantId == userId || _chats[i].id == (chatId ?? userId)) {
+      if (!_chats[i].isChannel && (_chats[i].participantId == userId || _chats[i].id == (chatId ?? userId))) {
         final cleanVerif = (verification != null && verification.isNotEmpty && verification != 'none')
             ? verification
             : _chats[i].verification;
@@ -645,7 +668,7 @@ class ChatProvider with ChangeNotifier {
   }
 
   Future<void> addOrUpdateChat(Chat chat) async {
-    final idx = _chats.indexWhere((c) => c.id == chat.id);
+    final idx = _chats.indexWhere((c) => c.isChannel == chat.isChannel && c.id == chat.id);
     if (idx != -1) {
       _chats[idx] = chat;
     } else {
@@ -735,8 +758,8 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  void _updateChatPreview(int chatId, String text, String time) {
-    final idx = _chats.indexWhere((c) => c.id == chatId);
+  void _updateChatPreview(int chatId, String text, String time, {bool? isChannel}) {
+    final idx = _chats.indexWhere((c) => (isChannel == null || c.isChannel == isChannel) && c.id == chatId);
     if (idx != -1) {
       final updated = _chats[idx].copyWith(
         lastMessageText: text,
@@ -882,10 +905,10 @@ class ChatProvider with ChangeNotifier {
             lastSeen: lastSeen,
           );
 
-          // 2. Обновляем локальные объекты чатов в памяти
+          // 2. Обновляем локальные объекты чатов в памяти (кроме каналов)
           bool changed = false;
           for (int i = 0; i < _chats.length; i++) {
-            if (_chats[i].participantId == userId || _chats[i].id == userId) {
+            if (!_chats[i].isChannel && (_chats[i].participantId == userId || _chats[i].id == userId)) {
               _chats[i] = _chats[i].copyWith(
                 isOnline: isOnline,
                 lastSeen: lastSeen ?? _chats[i].lastSeen,

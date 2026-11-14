@@ -436,10 +436,12 @@ class DatabaseHelper {
           }
         }
 
-        final pId = c['participant_id'] is int
-            ? c['participant_id'] as int
-            : int.tryParse(c['participant_id']?.toString() ?? '') ??
-                (c['owner_id'] is int ? c['owner_id'] as int : null);
+        final isChan = (c['is_channel'] == 1 || c['is_channel'] == true);
+        final pId = isChan
+            ? null
+            : (c['participant_id'] is int
+                ? c['participant_id'] as int
+                : int.tryParse(c['participant_id']?.toString() ?? ''));
 
         final oId = c['owner_id'] is int
             ? c['owner_id'] as int
@@ -448,7 +450,6 @@ class DatabaseHelper {
         final rawVerif = c['verification']?.toString() ??
             c['channel_verification']?.toString() ??
             c['sender_verification']?.toString();
-        final isChan = (c['is_channel'] == 1 || c['is_channel'] == true);
         final title = c['title']?.toString() ?? c['first_name']?.toString() ?? 'Чат';
         final uname = c['username']?.toString() ?? '';
 
@@ -566,10 +567,10 @@ class DatabaseHelper {
   }
 
   // Получение истории сообщений по чату (последние limit сообщений в хронологическом порядке)
-  Future<List<Message>> getMessages(int chatId, {int? alternateChatId, int limit = 300}) async {
+  Future<List<Message>> getMessages(int chatId, {int? alternateChatId, int limit = 300, bool isChannel = false}) async {
     final db = await instance.database;
     final List<Map<String, dynamic>> result;
-    if (alternateChatId != null && alternateChatId != chatId && alternateChatId > 0) {
+    if (!isChannel && alternateChatId != null && alternateChatId != chatId && alternateChatId > 0) {
       result = await db.query(
         'messages',
         where: 'chat_id = ? OR chat_id = ?',
@@ -588,6 +589,12 @@ class DatabaseHelper {
     }
     final list = result.map((m) => Message.fromMap(m)).toList();
     return list.reversed.toList();
+  }
+
+  // Очистка сообщений конкретного чата (например при пересинхронизации постов канала)
+  Future<void> clearChatMessages(int chatId) async {
+    final db = await instance.database;
+    await db.delete('messages', where: 'chat_id = ?', whereArgs: [chatId]);
   }
 
   // Сохранение одного сообщения (при отправке или получении по WS)

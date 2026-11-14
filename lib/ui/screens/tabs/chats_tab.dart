@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -103,15 +102,14 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         item['is_channel'] == true ||
         item['type'] == 'channel' ||
         (item['title'] != null &&
-            (item['title'].toString().toLowerCase().contains('канал') ||
-                item['title'].toString().toLowerCase().contains('portal')));
+            (item['title'].toString().toLowerCase().contains('канал')));
 
     if (isChannel) {
       final chatId = item['chat_id'] is int
           ? item['chat_id'] as int
           : (item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '') ?? 0);
       final title = (item['title'] ?? item['name'] ?? item['first_name'] ?? 'Канал').toString();
-      final avatar = (item['avatar'] ?? '').toString();
+      final avatar = (item['avatar'] ?? item['avatar_url'] ?? '').toString();
       final username = item['username']?.toString();
       final subCount = item['subscribers_count'] is int
           ? item['subscribers_count'] as int
@@ -120,7 +118,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
 
       Chat? existingChat;
       for (final c in chatProvider.chats) {
-        if (c.id == chatId) {
+        if (c.isChannel && c.id == chatId) {
           existingChat = c;
           break;
         }
@@ -133,6 +131,9 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       Chat channelChat;
       if (existingChat != null) {
         channelChat = existingChat.copyWith(
+          title: (title.isNotEmpty && title != 'Канал') ? title : existingChat.title,
+          avatar: avatar.isNotEmpty ? avatar : existingChat.avatar,
+          username: (username != null && username.isNotEmpty) ? username : existingChat.username,
           isChannel: true,
           subscribersCount: subCount > 0 ? subCount : existingChat.subscribersCount,
           isSubscribed: isSubscribed || existingChat.isSubscribed,
@@ -176,6 +177,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     // 1. Ищем существующий диалог
     Chat? existing;
     for (final c in chatProvider.chats) {
+      if (c.isChannel) continue;
       if (c.participantId == targetUserId) {
         existing = c;
         break;
