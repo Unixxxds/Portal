@@ -79,6 +79,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final Animation<Offset> _sendBtnArrowSlideAnim;
   final Set<int> _seenMessageIds = {};
   bool _isInitialMessagesRecorded = false;
+  ChatProvider? _chatProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _chatProvider = context.read<ChatProvider>();
+  }
 
   @override
   void initState() {
@@ -211,6 +218,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _chatProvider?.closeChat();
     if (_isTypingSent) {
       WebSocketService.instance.sendTyping(widget.chat.id, isTyping: false);
     }

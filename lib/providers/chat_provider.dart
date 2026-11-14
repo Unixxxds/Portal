@@ -136,13 +136,14 @@ class ChatProvider with ChangeNotifier {
   }
 
   Future<void> openChat(int chatId, {int? participantId}) async {
+    final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
     _activeChatId = chatId;
     _activeChatParticipantId = participantId;
 
-    // Сбросить непрочитанные локально в БД и в UI
-    await DatabaseHelper.instance.resetUnread(chatId);
+    // Сбросить непрочитанные локально в БД и в UI (только для входящих!)
+    await DatabaseHelper.instance.resetUnread(chatId, currentUserId: currentUserId);
     if (participantId != null && participantId != chatId) {
-      await DatabaseHelper.instance.resetUnread(participantId);
+      await DatabaseHelper.instance.resetUnread(participantId, currentUserId: currentUserId);
     }
     final chatIdx = _chats.indexWhere(
       (c) => c.id == chatId || (participantId != null && (c.participantId == participantId || c.id == participantId)),
@@ -245,7 +246,10 @@ class ChatProvider with ChangeNotifier {
         if (participantId != null && participantId != chatId) {
           _messagesByChat[participantId] = refreshedMsgs;
         }
-        await DatabaseHelper.instance.resetUnread(chatId);
+        await DatabaseHelper.instance.resetUnread(chatId, currentUserId: currentUserId);
+        if (participantId != null && participantId != chatId) {
+          await DatabaseHelper.instance.resetUnread(participantId, currentUserId: currentUserId);
+        }
         notifyListeners();
       }
     } catch (_) {}
@@ -444,7 +448,7 @@ class ChatProvider with ChangeNotifier {
     try {
       final res = await ApiService.instance.sendMessage(chatId, text.trim(), replyToMessageId: replyToMessageId);
       if (res['success'] == true && res['message'] != null) {
-        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>);
+        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
         
         // Заменяем временное сообщение реальным
         final list = _messagesByChat[chatId];
@@ -542,7 +546,7 @@ class ChatProvider with ChangeNotifier {
       );
 
       if (res['success'] == true && res['message'] != null) {
-        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>);
+        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
         final list = _messagesByChat[chatId];
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == tempId);
@@ -616,7 +620,7 @@ class ChatProvider with ChangeNotifier {
       );
 
       if (res['success'] == true && res['message'] != null) {
-        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>);
+        final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
         final list = _messagesByChat[chatId];
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == tempId);
@@ -780,16 +784,16 @@ class ChatProvider with ChangeNotifier {
             } catch (_) {}
           }
 
-          final isCurrentChat = (_activeChatId != null && _activeChatId == msg.chatId) ||
-              (_activeChatParticipantId != null &&
-                  (_activeChatParticipantId == msg.chatId || _activeChatParticipantId == msg.senderId)) ||
-              (_activeChatId != null &&
-                  _chats.any((c) =>
-                      (c.id == _activeChatId || c.participantId == _activeChatParticipantId) &&
-                      (c.id == msg.chatId || c.participantId == msg.chatId || (c.participantId != null && c.participantId == msg.senderId))));
+          final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
+          final isFromMe = (msg.senderId > 0 && currentUserId > 0 && msg.senderId == currentUserId);
 
-          // Если чат открыт
-          if (isCurrentChat) {
+          final isChatActive = (_activeChatId != null &&
+              (_activeChatId == msg.chatId ||
+                  (_activeChatParticipantId != null &&
+                      (_activeChatParticipantId == msg.chatId || _activeChatParticipantId == msg.senderId))));
+
+          // Если чат открыт на экране
+          if (isChatActive) {
             final activeKey = _activeChatId ?? msg.chatId;
             final list = _messagesByChat[activeKey] ?? [];
             if (!list.any((m) => m.id == msg.id)) {
@@ -802,17 +806,21 @@ class ChatProvider with ChangeNotifier {
                 _messagesByChat[msg.chatId] = list;
               }
             }
-            if (msg.id > 0) {
-              ApiService.instance.viewMessage(msg.id);
-            }
-            WebSocketService.instance.markChatAsRead(msg.chatId);
-            if (_activeChatId != null && _activeChatId != msg.chatId) {
-              WebSocketService.instance.markChatAsRead(_activeChatId!);
+            // ТОЛЬКО для входящих сообщений (не от нас!) помечаем как прочитанные
+            if (!isFromMe) {
+              if (msg.id > 0) {
+                ApiService.instance.viewMessage(msg.id);
+              }
+              WebSocketService.instance.markChatAsRead(msg.chatId);
+              if (_activeChatId != null && _activeChatId != msg.chatId) {
+                WebSocketService.instance.markChatAsRead(_activeChatId!);
+              }
             }
           }
 
           // Обновляем список чатов
-          final unreadDelta = isCurrentChat ? 0 : 1;
+          // Если сообщение от нас ИЛИ чат открыт прямо сейчас — не увеличиваем unread
+          final unreadDelta = (isChatActive || isFromMe) ? 0 : 1;
           await DatabaseHelper.instance.updateChatLastMessage(
             msg.chatId,
             msg.text,
@@ -899,14 +907,28 @@ class ChatProvider with ChangeNotifier {
             : int.tryParse(event['chat_id']?.toString() ?? '') ??
                 (event['chatId'] is int ? event['chatId'] as int : int.tryParse(event['chatId']?.toString() ?? '') ?? 0);
         if (chatId > 0) {
-          await DatabaseHelper.instance.resetUnread(chatId);
-          final cIdx = _chats.indexWhere((c) => c.id == chatId);
+          final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
+          await DatabaseHelper.instance.markOutgoingMessagesAsRead(chatId, currentUserId: currentUserId);
+          final cIdx = _chats.indexWhere((c) => c.id == chatId || c.participantId == chatId);
           if (cIdx != -1) {
             _chats[cIdx] = _chats[cIdx].copyWith(unreadCount: 0);
           }
-          if (_messagesByChat.containsKey(chatId)) {
-            final list = _messagesByChat[chatId]!;
-            _messagesByChat[chatId] = list.map((m) => m.copyWith(isRead: true)).toList();
+          final targetKeys = {
+            chatId,
+            if (_activeChatId != null) _activeChatId!,
+            if (_activeChatParticipantId != null) _activeChatParticipantId!,
+          };
+          for (final key in targetKeys) {
+            if (_messagesByChat.containsKey(key)) {
+              final list = _messagesByChat[key]!;
+              _messagesByChat[key] = list.map((m) {
+                // Если это исходящее сообщение, собеседник его прочитал!
+                if (currentUserId == 0 || m.senderId == currentUserId) {
+                  return m.copyWith(isRead: true);
+                }
+                return m;
+              }).toList();
+            }
           }
           notifyListeners();
         }

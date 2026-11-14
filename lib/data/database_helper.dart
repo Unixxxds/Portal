@@ -720,8 +720,8 @@ class DatabaseHelper {
     }
   }
 
-  // Сброс счетчика непрочитанных
-  Future<void> resetUnread(int chatId) async {
+  // Сброс счетчика непрочитанных для входящих сообщений
+  Future<void> resetUnread(int chatId, {int? currentUserId}) async {
     final db = await instance.database;
     await db.update(
       'chats',
@@ -729,12 +729,34 @@ class DatabaseHelper {
       where: 'id = ? OR participant_id = ?',
       whereArgs: [chatId, chatId],
     );
-    await db.update(
-      'messages',
-      {'is_read': 1},
-      where: 'chat_id = ?',
-      whereArgs: [chatId],
-    );
+    if (currentUserId != null && currentUserId > 0) {
+      await db.update(
+        'messages',
+        {'is_read': 1},
+        where: '(chat_id = ? OR chat_id = ?) AND sender_id != ?',
+        whereArgs: [chatId, chatId, currentUserId],
+      );
+    }
+  }
+
+  // Когда собеседник прочитал наши исходящие сообщения
+  Future<void> markOutgoingMessagesAsRead(int chatId, {int? currentUserId}) async {
+    final db = await instance.database;
+    if (currentUserId != null && currentUserId > 0) {
+      await db.update(
+        'messages',
+        {'is_read': 1},
+        where: '(chat_id = ? OR chat_id = ?) AND sender_id = ?',
+        whereArgs: [chatId, chatId, currentUserId],
+      );
+    } else {
+      await db.update(
+        'messages',
+        {'is_read': 1},
+        where: 'chat_id = ?',
+        whereArgs: [chatId],
+      );
+    }
   }
 
   // Добавление или обновление чата в БД
