@@ -15,6 +15,8 @@ import '../../models/message.dart';
 import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../services/media_cache_service.dart';
 import '../../services/api_service.dart';
 import '../../services/gallery_service.dart';
 import '../../services/websocket_service.dart';
@@ -25,6 +27,7 @@ import '../widgets/formatted_message_text.dart';
 import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
+import '../widgets/portal_emoji_picker.dart';
 import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_bubble.dart';
 import '../widgets/telegram_message_entrance.dart';
@@ -69,6 +72,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final Set<int> _viewedMessageIds = {};
   int _lastRenderedMessageCount = 0;
   bool _hasInitiallyScrolled = false;
+  bool _showEmojiPicker = false;
 
   // Voice recording state
   final AudioRecorder _audioRecorder = AudioRecorder();
@@ -102,6 +106,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _textFocusNode.addListener(() {
+      if (_textFocusNode.hasFocus && _showEmojiPicker) {
+        setState(() {
+          _showEmojiPicker = false;
+        });
+      }
+    });
     _sendBtnAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 240),
@@ -650,7 +661,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final contentTopPadding = MediaQuery.of(context).padding.top + 68 + (hasPinned ? 52.0 : 0.0);
 
     return PopScope(
+      canPop: !_showEmojiPicker,
       onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _showEmojiPicker) {
+          setState(() {
+            _showEmojiPicker = false;
+          });
+          return;
+        }
         if (didPop) {
           context.read<ChatProvider>().closeChat();
         }
@@ -672,59 +690,69 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             child: _buildEmptyChatPlaceholder(),
                           ),
                         )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: EdgeInsets.only(
-                            top: contentTopPadding,
-                            bottom: 12,
-                            left: 14,
-                            right: 14,
-                          ),
-                          itemCount: messages.length,
-                          itemBuilder: (context, index) {
-                            final msg = messages[index];
-                            final prevMsg = index > 0 ? messages[index - 1] : null;
-                            final showDate = prevMsg == null || _getDayKey(msg.createdAt) != _getDayKey(prevMsg.createdAt);
-
-                            final isMe = msg.senderId == currentUserId;
-                            Widget cardWidget;
-                            if (currentChat.isChannel) {
-                              cardWidget = _buildChannelPostCard(msg);
-                            } else {
-                              cardWidget = _buildMessageBubble(msg, isMe);
+                      : NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification is ScrollStartNotification && _showEmojiPicker) {
+                              setState(() {
+                                _showEmojiPicker = false;
+                              });
                             }
+                            return false;
+                          },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: EdgeInsets.only(
+                              top: contentTopPadding,
+                              bottom: 12,
+                              left: 14,
+                              right: 14,
+                            ),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = messages[index];
+                              final prevMsg = index > 0 ? messages[index - 1] : null;
+                              final showDate = prevMsg == null || _getDayKey(msg.createdAt) != _getDayKey(prevMsg.createdAt);
 
-                            final shouldAnimate = _isInitialMessagesRecorded && !_seenMessageIds.contains(msg.id);
-                            if (shouldAnimate) {
-                              _seenMessageIds.add(msg.id);
-                              cardWidget = TelegramMessageEntrance(
-                                key: ValueKey('entrance_${msg.id}'),
-                                isMe: isMe,
-                                animate: true,
+                              final isMe = msg.senderId == currentUserId;
+                              Widget cardWidget;
+                              if (currentChat.isChannel) {
+                                cardWidget = _buildChannelPostCard(msg);
+                              } else {
+                                cardWidget = _buildMessageBubble(msg, isMe);
+                              }
+
+                              final shouldAnimate = _isInitialMessagesRecorded && !_seenMessageIds.contains(msg.id);
+                              if (shouldAnimate) {
+                                _seenMessageIds.add(msg.id);
+                                cardWidget = TelegramMessageEntrance(
+                                  key: ValueKey('entrance_${msg.id}'),
+                                  isMe: isMe,
+                                  animate: true,
+                                  child: cardWidget,
+                                );
+                              }
+
+                              final canReply = !currentChat.isChannel || isChannelOwner;
+                              cardWidget = TelegramSwipeToReply(
+                                key: ValueKey('swipe_${msg.id}'),
+                                enabled: canReply,
+                                onReply: () => _handleReplyToMessage(msg),
                                 child: cardWidget,
                               );
-                            }
 
-                            final canReply = !currentChat.isChannel || isChannelOwner;
-                            cardWidget = TelegramSwipeToReply(
-                              key: ValueKey('swipe_${msg.id}'),
-                              enabled: canReply,
-                              onReply: () => _handleReplyToMessage(msg),
-                              child: cardWidget,
-                            );
-
-                            if (showDate) {
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildDateBadge(_formatDateBadge(msg.createdAt)),
-                                  cardWidget,
-                                ],
-                              );
-                            }
-                            return cardWidget;
-                          },
+                              if (showDate) {
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildDateBadge(_formatDateBadge(msg.createdAt)),
+                                    cardWidget,
+                                  ],
+                                );
+                              }
+                              return cardWidget;
+                            },
+                          ),
                         ),
                 ),
 
@@ -1975,33 +2003,37 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     )
                   : GestureDetector(
                       onTap: () => _showFullscreenGallery(fullUrls, 0),
-                      child: Image.network(
-                        fullUrls.first,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            height: 200,
-                            color: const Color(0xFF222222),
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: File(fullUrls.first).existsSync()
+                          ? Image.file(
+                              File(fullUrls.first),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: fullUrls.first,
+                              cacheManager: MediaCacheService.instance.cacheManager,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              fadeInDuration: const Duration(milliseconds: 150),
+                              fadeOutDuration: const Duration(milliseconds: 150),
+                              placeholder: (context, url) => Container(
+                                height: 200,
+                                color: const Color(0xFF222222),
+                                child: const Center(
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                height: 160,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF222222),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_rounded, color: Color(0xFF929292), size: 36),
+                                ),
+                              ),
                             ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            height: 160,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF222222),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.broken_image_rounded, color: Color(0xFF929292), size: 36),
-                            ),
-                          );
-                        },
-                      ),
                     ),
             ),
             if (caption != null && caption.isNotEmpty) const SizedBox(height: 10),
@@ -2209,6 +2241,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ? () => context.read<ChatProvider>().cancelPendingMessage(widget.chat.id, msg.id)
             : null,
       );
+    }
+    if (_isPureEmoji(msg.text)) {
+      return _buildPureEmojiBubble(msg, isMe);
     }
 
     final double maxBubbleWidth = MediaQuery.of(context).size.width * 0.78;
@@ -2674,6 +2709,147 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     } catch (_) {
       return 'Сегодня';
     }
+  }
+
+  static final RegExp _pureEmojiRegex = RegExp(
+    r'^[\s\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{200D}\u{FE0E}\u{FE0F}\u{20E3}\u{E0020}-\u{E007F}\u{00A9}\u{00AE}\u{2194}-\u{21AA}\u{2934}-\u{2935}\u{3030}\u{303D}\u{3297}\u{3299}]+$',
+    unicode: true,
+  );
+
+  bool _isPureEmoji(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return false;
+    // Disallow regular letters, digits or Cyrillic characters
+    if (RegExp(r'[a-zA-Z0-9\u0400-\u04FF]').hasMatch(trimmed)) return false;
+    // Disallow special protocol tags or links
+    if (trimmed.startsWith('[PORTAL_') || trimmed.contains('http://') || trimmed.contains('https://')) return false;
+    return _pureEmojiRegex.hasMatch(trimmed);
+  }
+
+  // ===========================================================================
+  // PURE EMOJI BUBBLE (Without podlozhka, standalone emojis)
+  // ===========================================================================
+  Widget _buildPureEmojiBubble(Message msg, bool isMe) {
+    final trimmed = msg.text.trim();
+    final cleanChars = Characters(trimmed.replaceAll(RegExp(r'\s+'), ''));
+    final emojiCount = cleanChars.length;
+
+    double emojiSize = 54.0;
+    if (emojiCount == 2) {
+      emojiSize = 42.0;
+    } else if (emojiCount == 3) {
+      emojiSize = 36.0;
+    } else if (emojiCount <= 6) {
+      emojiSize = 30.0;
+    } else if (emojiCount > 6) {
+      emojiSize = 24.0;
+    }
+
+    final timeWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (msg.isEdited) ...[
+          const Text(
+            'изменено ',
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              fontSize: 10,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+        Text(
+          _formatMessageTime(msg.createdAt),
+          style: const TextStyle(
+            fontFamily: AppTheme.fontText,
+            fontSize: 10.5,
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (isMe) ...[
+          const SizedBox(width: 3),
+          if (msg.isPending)
+            const SizedBox(
+              width: 9,
+              height: 9,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.3,
+                color: Colors.white,
+              ),
+            )
+          else
+            Icon(
+              msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
+              size: 13.5,
+              color: Colors.white,
+            ),
+        ],
+      ],
+    );
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onLongPress: () => _showMessageContextMenu(msg),
+        onSecondaryTap: () => _showMessageContextMenu(msg),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          child: Column(
+            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (msg.replyToMessageId != null) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xB3191919),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
+                  ),
+                  child: _buildReplyPreviewInBubble(msg.replyToMessageId!),
+                ),
+              ],
+              Stack(
+                alignment: isMe ? Alignment.bottomRight : Alignment.bottomLeft,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.only(
+                      right: isMe ? 22.0 : 4.0,
+                      left: isMe ? 4.0 : 22.0,
+                      bottom: 8.0,
+                      top: 2.0,
+                    ),
+                    child: Text(
+                      trimmed,
+                      style: TextStyle(
+                        fontSize: emojiSize,
+                        height: 1.18,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: isMe ? 0 : null,
+                    left: isMe ? null : 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0x73000000),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: timeWidget,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -3234,24 +3410,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   fit: BoxFit.cover,
                   height: height,
                 )
-              : Image.network(
-                  url,
+              : CachedNetworkImage(
+                  imageUrl: url,
+                  cacheManager: MediaCacheService.instance.cacheManager,
                   fit: BoxFit.cover,
                   height: height,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      color: const Color(0xFF222222),
-                      child: const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        ),
+                  fadeInDuration: const Duration(milliseconds: 150),
+                  fadeOutDuration: const Duration(milliseconds: 150),
+                  placeholder: (context, u) => Container(
+                    color: const Color(0xFF222222),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) => Container(
+                    ),
+                  ),
+                  errorWidget: (context, u, error) => Container(
                     color: const Color(0xFF222222),
                     child: const Center(
                       child: Icon(Icons.broken_image_rounded, color: Color(0xFF929292), size: 24),
@@ -3844,6 +4020,58 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _toggleEmojiPicker() {
+    if (_showEmojiPicker) {
+      setState(() {
+        _showEmojiPicker = false;
+      });
+      _textFocusNode.requestFocus();
+    } else {
+      _textFocusNode.unfocus();
+      setState(() {
+        _showEmojiPicker = true;
+      });
+    }
+  }
+
+  void _handleEmojiSelected(String emoji) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    final newText = text.replaceRange(start, end, emoji);
+    final newOffset = start + emoji.length;
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
+    );
+    _handleTextChange(newText);
+  }
+
+  void _handleEmojiBackspace() {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    if (text.isEmpty) return;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    if (start > 0 && start == end) {
+      final beforeCursor = Characters(text.substring(0, start));
+      final dropped = beforeCursor.skipLast(1).toString();
+      final afterCursor = text.substring(end);
+      _textController.value = TextEditingValue(
+        text: dropped + afterCursor,
+        selection: TextSelection.collapsed(offset: dropped.length),
+      );
+    } else if (start != end) {
+      final newText = text.replaceRange(start, end, '');
+      _textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: start),
+      );
+    }
+    _handleTextChange(_textController.text);
+  }
+
   // ===========================================================================
   // FLOATING INPUT BAR (No podlozhka, 3 floating widgets)
   // ===========================================================================
@@ -3863,7 +4091,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         else if (_replyingToMessage != null)
           _buildReplyBar(),
         Padding(
-          padding: EdgeInsets.fromLTRB(10, 6, 10, bottomPadding),
+          padding: EdgeInsets.fromLTRB(10, 6, 10, _showEmojiPicker ? 6.0 : bottomPadding),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -3976,15 +4204,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
                           // Смайлик справа внутри пузыря (прижат к низу как в Telegram)
                           GestureDetector(
-                            onTap: () {},
-                            child: const SizedBox(
+                            onTap: _toggleEmojiPicker,
+                            child: SizedBox(
                               height: 40,
                               child: Center(
                                 child: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 2),
+                                  padding: const EdgeInsets.symmetric(horizontal: 2),
                                   child: Icon(
-                                    Icons.sentiment_satisfied_rounded,
-                                    color: Color(0xFF929292),
+                                    _showEmojiPicker
+                                        ? Icons.keyboard_rounded
+                                        : Icons.sentiment_satisfied_rounded,
+                                    color: _showEmojiPicker
+                                        ? const Color(0xFF007AFF)
+                                        : const Color(0xFF929292),
                                     size: 22,
                                   ),
                                 ),
@@ -4199,12 +4431,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
+        if (_showEmojiPicker)
+          PortalEmojiPicker(
+            onEmojiSelected: _handleEmojiSelected,
+            onBackspacePressed: _handleEmojiBackspace,
+            bottomPadding: mediaQuery.padding.bottom,
+          ),
       ],
     );
   }
 
   Future<void> _openPhotoGallerySheet() async {
     FocusScope.of(context).unfocus();
+    if (_showEmojiPicker) {
+      setState(() => _showEmojiPicker = false);
+    }
     final mediaQuery = MediaQuery.of(context);
     final bottomInset = mediaQuery.viewInsets.bottom;
     final bottomPadding = bottomInset > 0
@@ -4279,18 +4520,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       onPageChanged: (idx) =>
                           setModalState(() => currentIndex = idx),
                       itemBuilder: (ctx, idx) {
+                        final rawU = imageUrls[idx];
+                        final isLocal = File(rawU).existsSync();
+                        final fullUrl = isLocal ? rawU : AppConstants.formatMediaUrl(rawU);
+
                         return Center(
                           child: InteractiveViewer(
                             minScale: 0.8,
                             maxScale: 3.5,
-                            child: Image.network(
-                              AppConstants.formatMediaUrl(imageUrls[idx]),
-                              fit: BoxFit.contain,
-                              errorBuilder: (c, e, s) => const Center(
-                                child: Icon(Icons.broken_image_rounded,
-                                    color: Colors.white54, size: 48),
-                              ),
-                            ),
+                            child: isLocal
+                                ? Image.file(
+                                    File(fullUrl),
+                                    fit: BoxFit.contain,
+                                  )
+                                : CachedNetworkImage(
+                                    imageUrl: fullUrl,
+                                    cacheManager: MediaCacheService.instance.cacheManager,
+                                    fit: BoxFit.contain,
+                                    placeholder: (c, u) => const Center(
+                                      child: SizedBox(
+                                        width: 32,
+                                        height: 32,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                                      ),
+                                    ),
+                                    errorWidget: (c, u, s) => const Center(
+                                      child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+                                    ),
+                                  ),
                           ),
                         );
                       },

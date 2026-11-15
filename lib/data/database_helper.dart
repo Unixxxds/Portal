@@ -6,17 +6,72 @@ import '../models/user.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../models/user_gift.dart';
+import 'secure_storage_service.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static int? _activeUserId;
 
   DatabaseHelper._init();
 
+  static void setActiveUserId(int? userId) {
+    if (_activeUserId != userId) {
+      _activeUserId = userId;
+      try {
+        _database?.close();
+      } catch (_) {}
+      _database = null;
+    }
+  }
+
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('portal_local.db');
+    if (_database != null && _database!.isOpen) return _database!;
+
+    final currentId = _activeUserId ?? await SecureStorageService.instance.getCurrentUserId();
+    final dbName = (currentId != null && currentId > 0)
+        ? 'portal_user_$currentId.db'
+        : 'portal_local.db';
+
+    if (currentId != null && currentId > 0) {
+      await _migrateLegacyIfNeeded(currentId);
+    }
+
+    _database = await _initDB(dbName);
     return _database!;
+  }
+
+  Future<void> _migrateLegacyIfNeeded(int userId) async {
+    try {
+      final dbPath = await getApplicationDocumentsDirectory();
+      final legacyPath = join(dbPath.path, 'portal_local.db');
+      final legacyFile = File(legacyPath);
+
+      if (legacyFile.existsSync()) {
+        int? legacyUserId;
+        try {
+          final legacyDb = await openDatabase(legacyPath);
+          final userRows = await legacyDb.query('users', columns: ['id']);
+          if (userRows.isNotEmpty) {
+            legacyUserId = userRows.first['id'] as int?;
+          }
+          await legacyDb.close();
+        } catch (_) {}
+
+        final userPath = join(dbPath.path, 'portal_user_$userId.db');
+        final userFile = File(userPath);
+
+        // Переносим данные из legacy ТОЛЬКО если они принадлежат этому же аккаунту
+        if (legacyUserId == userId && !userFile.existsSync()) {
+          legacyFile.copySync(userFile.path);
+        }
+
+        // Удаляем устаревший общий файл, чтобы он не скопировался другим аккаунтам
+        try {
+          legacyFile.deleteSync();
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   Future<Database> _initDB(String filePath) async {
@@ -127,7 +182,35 @@ class DatabaseHelper {
 
     // Also verify schema in case db was opened without onUpgrade
     await _checkAndUpgradeSchema(db);
+
+    // Гарантируем чистоту изоляции: если БД была скопирована от другого пользователя,
+    // очищаем чужие данные
+    await _validateDatabaseOwnership(db, filePath);
+
     return db;
+  }
+
+  Future<void> _validateDatabaseOwnership(Database db, String filePath) async {
+    try {
+      if (filePath.startsWith('portal_user_')) {
+        final match = RegExp(r'portal_user_(\d+)\.db').firstMatch(filePath);
+        if (match != null) {
+          final expectedUserId = int.tryParse(match.group(1)!);
+          if (expectedUserId != null && expectedUserId > 0) {
+            final foreignUsers = await db.rawQuery(
+              'SELECT id FROM users WHERE id != ? LIMIT 1',
+              [expectedUserId],
+            );
+            if (foreignUsers.isNotEmpty) {
+              await db.delete('chats');
+              await db.delete('messages');
+              await db.delete('users');
+              await db.delete('user_gifts');
+            }
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkAndUpgradeSchema(Database db) async {
@@ -390,7 +473,35 @@ class DatabaseHelper {
         );
       }
 
-      // 2. Получаем текущие локальные чаты для сохранения прочитанного состояния
+      // 2. Изоляция аккаунтов: удаляем из локальной БД любые чаты и сообщения,
+      // которые не принадлежат этому аккаунту согласно серверному бутстрапу
+      final serverChatIds = <int>{};
+      for (final c in chats) {
+        if (c is Map<String, dynamic>) {
+          final rawId = (c['chat_id'] ?? c['id']);
+          final cId = rawId is int ? rawId : int.tryParse(rawId.toString()) ?? 0;
+          if (cId > 0) serverChatIds.add(cId);
+        }
+      }
+
+      if (serverChatIds.isNotEmpty) {
+        final placeholders = List.filled(serverChatIds.length, '?').join(',');
+        await txn.delete(
+          'chats',
+          where: 'id NOT IN ($placeholders)',
+          whereArgs: serverChatIds.toList(),
+        );
+        await txn.delete(
+          'messages',
+          where: 'chat_id NOT IN ($placeholders)',
+          whereArgs: serverChatIds.toList(),
+        );
+      } else {
+        await txn.delete('chats');
+        await txn.delete('messages');
+      }
+
+      // 3. Получаем текущие локальные чаты для сохранения прочитанного состояния
       final existingRows = await txn.query(
         'chats',
         columns: ['id', 'unread_count', 'last_message_time', 'last_message_text'],

@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../models/message.dart';
+import '../../services/media_cache_service.dart';
 import '../theme.dart';
 import 'telegram_bubble.dart';
 
@@ -166,10 +167,14 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         if (_position > Duration.zero && _position < _duration) {
           await _player.resume();
         } else {
+          String playSource = _audioUrl;
           if (_audioUrl.startsWith('http://') || _audioUrl.startsWith('https://')) {
-            await _player.play(UrlSource(_audioUrl));
+            playSource = await MediaCacheService.instance.getOrCacheVoice(_audioUrl);
+          }
+          if (playSource.startsWith('http://') || playSource.startsWith('https://')) {
+            await _player.play(UrlSource(playSource));
           } else {
-            await _player.play(DeviceFileSource(_audioUrl));
+            await _player.play(DeviceFileSource(playSource));
           }
         }
       } catch (e) {

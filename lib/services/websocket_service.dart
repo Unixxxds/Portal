@@ -192,5 +192,17 @@ class WebSocketService {
     _channel = null;
     _isConnected = false;
   }
+
+  void reconnectWithNewToken() {
+    _isDisposed = false;
+    _pingTimer?.cancel();
+    _reconnectTimer?.cancel();
+    try {
+      _channel?.sink.close();
+    } catch (_) {}
+    _channel = null;
+    _isConnected = false;
+    connect();
+  }
 }
 

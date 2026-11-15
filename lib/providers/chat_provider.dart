@@ -9,6 +9,7 @@ import '../models/user_gift.dart';
 import '../data/database_helper.dart';
 import '../data/secure_storage_service.dart';
 import '../services/api_service.dart';
+import '../services/media_cache_service.dart';
 import '../services/websocket_service.dart';
 
 class ChatProvider with ChangeNotifier {
@@ -132,6 +133,35 @@ class ChatProvider with ChangeNotifier {
     }
 
     _isSyncing = false;
+    notifyListeners();
+  }
+
+  Future<void> switchAccountData() async {
+    _chats.clear();
+    _messagesByChat.clear();
+    _activeChatId = null;
+    _activeChatParticipantId = null;
+    _typingUsers.clear();
+    _pinnedMessages.clear();
+    _isLoading = true;
+    notifyListeners();
+
+    // 1. Синхронизируем бутстрап с сервера для целевого аккаунта.
+    // Бутстрап очистит из локальной БД чужие чаты и сохранит актуальные закрепы
+    try {
+      await syncBootstrap();
+    } catch (e) {
+      debugPrint('Sync bootstrap error during account switch: $e');
+    }
+
+    // 2. Загружаем актуальные чаты из изолированной локальной БД аккаунта
+    try {
+      _chats = await DatabaseHelper.instance.getChats();
+    } catch (e) {
+      debugPrint('Error loading local chats: $e');
+    }
+
+    _isLoading = false;
     notifyListeners();
   }
 
@@ -268,6 +298,11 @@ class ChatProvider with ChangeNotifier {
         _messagesByChat[chatId] = refreshedMsgs;
         if (!isChannel && participantId != null && participantId != chatId) {
           _messagesByChat[participantId] = refreshedMsgs;
+        }
+        for (final m in refreshedMsgs) {
+          if (m.text.contains('[PORTAL_PHOTO]:')) {
+            MediaCacheService.instance.precacheMessagePhotos(m.text);
+          }
         }
         await DatabaseHelper.instance.resetUnread(chatId, currentUserId: currentUserId);
         if (!isChannel && participantId != null && participantId != chatId) {
@@ -805,6 +840,11 @@ class ChatProvider with ChangeNotifier {
               final gift = UserGift.fromJson(map, fallbackUserId: rId);
               await DatabaseHelper.instance.insertUserGift(gift);
             } catch (_) {}
+          }
+
+          // Автоматически сохраняем полученные фото на диск (оффлайн кэш)
+          if (msg.text.contains('[PORTAL_PHOTO]:')) {
+            MediaCacheService.instance.precacheMessagePhotos(msg.text);
           }
 
           final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;

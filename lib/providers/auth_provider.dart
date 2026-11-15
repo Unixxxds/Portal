@@ -1,10 +1,14 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../models/account_session.dart';
 import '../models/user.dart';
 import '../data/secure_storage_service.dart';
 import '../data/database_helper.dart';
 import '../services/api_service.dart';
+import '../services/multi_account_service.dart';
 import '../services/websocket_service.dart';
+import 'chat_provider.dart';
 
 enum AuthStatus { initial, checking, authenticated, unauthenticated }
 enum AuthStep { email, code, cloudPassword }
@@ -37,9 +41,13 @@ class AuthProvider with ChangeNotifier {
 
       if (token != null && token.isNotEmpty) {
         if (userId != null) {
+          DatabaseHelper.setActiveUserId(userId);
           _currentUser = await DatabaseHelper.instance.getUser(userId);
         }
         _status = AuthStatus.authenticated;
+        if (_currentUser != null) {
+          await MultiAccountService.instance.init(currentUser: _currentUser, currentToken: token);
+        }
         WebSocketService.instance.connect();
         // Refresh full profile & real Sparks balance from database asynchronously
         refreshCurrentUser();
@@ -99,9 +107,19 @@ class AuthProvider with ChangeNotifier {
 
           if (res['user'] != null && res['user'] is Map<String, dynamic>) {
             _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
+            DatabaseHelper.setActiveUserId(_currentUser!.id);
             await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
             final db = await DatabaseHelper.instance.database;
             await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+
+            await MultiAccountService.instance.saveAccount(
+              AccountSession(
+                userId: _currentUser!.id,
+                token: token,
+                user: _currentUser!,
+                lastActive: DateTime.now(),
+              ),
+            );
           }
 
           _status = AuthStatus.authenticated;
@@ -135,9 +153,19 @@ class AuthProvider with ChangeNotifier {
 
         if (res['user'] != null && res['user'] is Map<String, dynamic>) {
           _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
+          DatabaseHelper.setActiveUserId(_currentUser!.id);
           await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
           final db = await DatabaseHelper.instance.database;
           await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+
+          await MultiAccountService.instance.saveAccount(
+            AccountSession(
+              userId: _currentUser!.id,
+              token: token,
+              user: _currentUser!,
+              lastActive: DateTime.now(),
+            ),
+          );
         }
 
         _cloudTempToken = null;
@@ -258,16 +286,76 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         await DatabaseHelper.instance.updateUserProfile(serverUser);
         await DatabaseHelper.instance.updateUserSparks(serverUser.id, serverUser.sparks);
+        await MultiAccountService.instance.updateUser(serverUser);
       }
     } catch (e) {
       debugPrint('AuthProvider.refreshCurrentUser error: $e');
     }
   }
 
-  Future<void> logout() async {
+  Future<void> switchAccount(AccountSession targetSession, BuildContext context) async {
+    if (_currentUser?.id == targetSession.userId) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // 1. Отключаем WebSocket текущего аккаунта
+      WebSocketService.instance.disconnect();
+
+      // 2. Устанавливаем новый токен и ID пользователя в хранилище
+      await SecureStorageService.instance.saveToken(targetSession.token);
+      await SecureStorageService.instance.saveCurrentUserId(targetSession.userId);
+
+      // 3. Переключаем SQLite на изолированную БД целевого пользователя
+      DatabaseHelper.setActiveUserId(targetSession.userId);
+
+      // 4. Фиксируем активный аккаунт в сервисе
+      await MultiAccountService.instance.setActiveAccount(targetSession.userId);
+
+      // 5. Переключаем пользователя в памяти
+      _currentUser = targetSession.user;
+      _status = AuthStatus.authenticated;
+
+      // 6. Очищаем старые сообщения и чаты и загружаем данные нового аккаунта
+      if (context.mounted) {
+        await context.read<ChatProvider>().switchAccountData();
+      }
+
+      // 7. Подключаем WebSocket с новым токеном
+      WebSocketService.instance.reconnectWithNewToken();
+
+      _isLoading = false;
+      notifyListeners();
+
+      // 8. Фоном обновляем актуальный профиль с сервера
+      refreshCurrentUser();
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('Error switching account: $e');
+    }
+  }
+
+  Future<void> logout({BuildContext? context}) async {
+    final activeId = _currentUser?.id;
+    final accounts = MultiAccountService.instance.accounts;
+
+    if (activeId != null && accounts.length > 1) {
+      await MultiAccountService.instance.removeAccount(activeId);
+      final remaining = MultiAccountService.instance.activeAccount ?? MultiAccountService.instance.accounts.first;
+      if (context != null && context.mounted) {
+        await switchAccount(remaining, context);
+      }
+      return;
+    }
+
     WebSocketService.instance.disconnect();
     await SecureStorageService.instance.clearAll();
     await DatabaseHelper.instance.clearAll();
+    if (activeId != null) {
+      await MultiAccountService.instance.removeAccount(activeId);
+    }
     _currentUser = null;
     _step = AuthStep.email;
     _status = AuthStatus.unauthenticated;
