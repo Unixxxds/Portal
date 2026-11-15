@@ -12,6 +12,7 @@ import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
 import '../../widgets/gift_detail_modal.dart';
 import '../../widgets/gift_visuals.dart';
+import '../../widgets/profile_gift_bubbles_avatar.dart';
 import '../chat_screen.dart';
 import '../edit_profile_screen.dart';
 
@@ -265,38 +266,50 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                     ),
 
-                    // Avatar overlapping banner bottom
+                    // Avatar overlapping banner bottom with 3D Orbiting Gift Bubbles
                     Positioned(
-                      bottom: 0,
+                      bottom: -32,
                       left: 0,
                       right: 0,
                       child: Center(
-                        child: GestureDetector(
-                          onTap: () {
+                        child: ProfileGiftBubblesAvatar(
+                          avatarRadius: 45,
+                          gifts: _userGifts,
+                          onAvatarTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const EditProfileScreen()),
                             );
                           },
+                          onGiftTap: (gift) {
+                            GiftDetailModal.show(
+                              context,
+                              gift: gift,
+                              ownerName: user.fullName.isNotEmpty ? user.fullName : user.username,
+                              ownerAvatar: user.avatar,
+                              onGiftUpgraded: (upgraded) {
+                                setState(() {
+                                  final idx = _userGifts.indexWhere((g) => g.id == upgraded.id);
+                                  if (idx != -1) {
+                                    _userGifts[idx] = upgraded;
+                                  }
+                                });
+                              },
+                            );
+                          },
                           child: Stack(
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: const Color(0xFF090909), width: 4),
-                                ),
-                                child: AvatarWidget(
-                                  avatarUrl: user.avatar,
-                                  title: user.fullName.isNotEmpty ? user.fullName : user.username,
-                                  size: 90,
-                                ),
+                              AvatarWidget(
+                                avatarUrl: user.avatar,
+                                title: user.fullName.isNotEmpty ? user.fullName : user.username,
+                                size: 90,
                               ),
                               Positioned(
                                 right: 0,
                                 bottom: 0,
                                 child: Container(
-                                  width: 28,
-                                  height: 28,
+                                  width: 26,
+                                  height: 26,
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     shape: BoxShape.circle,
@@ -306,7 +319,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                     child: Icon(
                                       Icons.camera_alt_rounded,
                                       color: Color(0xFF090909),
-                                      size: 14,
+                                      size: 13,
                                     ),
                                   ),
                                 ),
@@ -319,7 +332,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 42),
             ] else ...[
               // ===============================================================
               // TOP BAR: "Профиль" + Кнопка "Изм." (Default without banner)
@@ -375,34 +388,46 @@ class _ProfileTabState extends State<ProfileTab> {
                 ),
               ),
 
-              // PROFILE HEADER: Avatar
+              // PROFILE HEADER: Avatar with 3D Orbiting Gift Bubbles
               Center(
-                child: GestureDetector(
-                  onTap: () {
+                child: ProfileGiftBubblesAvatar(
+                  avatarRadius: 46,
+                  gifts: _userGifts,
+                  onAvatarTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const EditProfileScreen()),
                     );
                   },
+                  onGiftTap: (gift) {
+                    GiftDetailModal.show(
+                      context,
+                      gift: gift,
+                      ownerName: user.fullName.isNotEmpty ? user.fullName : user.username,
+                      ownerAvatar: user.avatar,
+                      onGiftUpgraded: (upgraded) {
+                        setState(() {
+                          final idx = _userGifts.indexWhere((g) => g.id == upgraded.id);
+                          if (idx != -1) {
+                            _userGifts[idx] = upgraded;
+                          }
+                        });
+                      },
+                    );
+                  },
                   child: Stack(
                     children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF191919), width: 3),
-                        ),
-                        child: AvatarWidget(
-                          avatarUrl: user.avatar,
-                          title: user.fullName.isNotEmpty ? user.fullName : user.username,
-                          size: 92,
-                        ),
+                      AvatarWidget(
+                        avatarUrl: user.avatar,
+                        title: user.fullName.isNotEmpty ? user.fullName : user.username,
+                        size: 92,
                       ),
                       Positioned(
                         right: 0,
                         bottom: 0,
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 26,
+                          height: 26,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             shape: BoxShape.circle,
@@ -412,7 +437,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             child: Icon(
                               Icons.camera_alt_rounded,
                               color: Color(0xFF090909),
-                              size: 14,
+                              size: 13,
                             ),
                           ),
                         ),

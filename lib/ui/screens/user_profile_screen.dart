@@ -15,6 +15,7 @@ import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
 import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
+import '../widgets/profile_gift_bubbles_avatar.dart';
 import '../widgets/send_gift_modal.dart';
 import 'edit_profile_screen.dart';
 
@@ -349,117 +350,117 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                       ),
                     ),
 
-                    // Identity: Avatar + Name + Online Status
+                    // Identity: Centered Avatar with Orbiting 3D Gift Bubbles
                     Positioned(
-                      left: 20,
-                      bottom: 0,
-                      right: 20,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // Avatar with thick black border
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF090909),
-                                width: 3.5,
-                              ),
+                      left: 0,
+                      right: 0,
+                      bottom: -32,
+                      child: Center(
+                        child: ProfileGiftBubblesAvatar(
+                          avatarRadius: 44,
+                          gifts: _userGifts,
+                          onGiftTap: (gift) {
+                            GiftDetailModal.show(
+                              context,
+                              gift: gift,
+                              ownerName: displayName,
+                              ownerAvatar: avatarUrl,
+                            );
+                          },
+                          child: Hero(
+                            tag: 'user_avatar_${widget.chat.id}',
+                            flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
+                              return Material(
+                                color: Colors.transparent,
+                                child: toHeroContext.widget,
+                              );
+                            },
+                            child: AvatarWidget(
+                              avatarUrl: avatarUrl,
+                              title: displayName,
+                              size: 88,
+                              isOnline: isOnline,
+                              isSaved: chat.isSaved,
                             ),
-                            child: Hero(
-                              tag: 'user_avatar_${widget.chat.id}',
-                              flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
-                                return Material(
-                                  color: Colors.transparent,
-                                  child: toHeroContext.widget,
-                                );
-                              },
-                              child: AvatarWidget(
-                                avatarUrl: avatarUrl,
-                                title: displayName,
-                                size: 80,
-                                isOnline: isOnline,
-                                isSaved: chat.isSaved,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 38),
+
+              // Name & Online Status (Centered directly under avatar)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // For users: verification badge (dev or user) is to the LEFT of the name
+                          if (isVerified) ...[
+                            VerificationBadge(verification: verification, size: 23),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontDisplay,
+                                fontSize: 23,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: -0.4,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 14),
-
-                          // Name & Online Status
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: [
-                                      // For users: verification badge (dev or user) is to the LEFT of the name
-                                      if (isVerified) ...[
-                                        VerificationBadge(verification: verification, size: 23),
-                                        const SizedBox(width: 6),
-                                      ],
-                                      Flexible(
-                                        child: Text(
-                                          displayName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontFamily: AppTheme.fontDisplay,
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.white,
-                                            letterSpacing: -0.4,
-                                          ),
-                                        ),
-                                      ),
-                                      // For users: premium star is to the RIGHT of the name
-                                      if (isPremium) ...[
-                                        const SizedBox(width: 6),
-                                        const PremiumBadge(size: 23),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Row(
-                                    children: [
-                                      if (isOnline) ...[
-                                        Container(
-                                          width: 7,
-                                          height: 7,
-                                          margin: const EdgeInsets.only(right: 5),
-                                          decoration: const BoxDecoration(
-                                            color: AppTheme.statusOnline,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                      ],
-                                      Text(
-                                        UserActivityHelper.formatActivity(
-                                          isOnline: isOnline,
-                                          lastSeen: user?.lastSeen ?? chat.lastSeen,
-                                          isChannel: chat.isChannel,
-                                        ),
-                                        style: TextStyle(
-                                          fontFamily: AppTheme.fontText,
-                                          fontSize: 13,
-                                          color: isOnline
-                                              ? AppTheme.statusOnline
-                                              : AppTheme.textSecondary,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                          // For users: premium star is to the RIGHT of the name
+                          if (isPremium) ...[
+                            const SizedBox(width: 6),
+                            const PremiumBadge(size: 23),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isOnline) ...[
+                            Container(
+                              width: 7,
+                              height: 7,
+                              margin: const EdgeInsets.only(right: 6),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.statusOnline,
+                                shape: BoxShape.circle,
                               ),
+                            ),
+                          ],
+                          Text(
+                            UserActivityHelper.formatActivity(
+                              isOnline: isOnline,
+                              lastSeen: user?.lastSeen ?? chat.lastSeen,
+                              isChannel: chat.isChannel,
+                            ),
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 13.5,
+                              color: isOnline
+                                  ? AppTheme.statusOnline
+                                  : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               FadeTransition(
