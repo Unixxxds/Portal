@@ -170,6 +170,25 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Preloads chat messages from SQLite into memory for instantaneous 0 ms opening
+  Future<void> preloadChat(int chatId, {int? participantId, bool isChannel = false}) async {
+    if (_messagesByChat.containsKey(chatId) && _messagesByChat[chatId]!.isNotEmpty) {
+      return;
+    }
+    try {
+      final localMsgs = await DatabaseHelper.instance.getMessages(
+        chatId,
+        alternateChatId: isChannel ? null : participantId,
+        isChannel: isChannel,
+      );
+      _messagesByChat[chatId] = localMsgs;
+      if (!isChannel && participantId != null && participantId != chatId) {
+        _messagesByChat[participantId] = localMsgs;
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> openChat(int chatId, {int? participantId, bool isChannel = false}) async {
     final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
     _activeChatId = chatId;

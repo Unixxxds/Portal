@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../data/database_helper.dart';
@@ -31,8 +32,18 @@ class _ProfileTabState extends State<ProfileTab> {
   @override
   void initState() {
     super.initState();
+    final auth = context.read<AuthProvider>();
+    if (auth.currentUser != null) {
+      // 1. Instant 0 ms SQLite cache load before any network call
+      DatabaseHelper.instance.getUserGifts(auth.currentUser!.id).then((cached) {
+        if (cached.isNotEmpty && mounted && _userGifts.isEmpty) {
+          setState(() {
+            _userGifts = cached;
+          });
+        }
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final auth = context.read<AuthProvider>();
       auth.refreshCurrentUser();
       if (auth.currentUser != null) {
         _loadUserGifts(auth.currentUser!.id);
@@ -159,13 +170,17 @@ class _ProfileTabState extends State<ProfileTab> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              formattedBanner,
+                            CachedNetworkImage(
+                              imageUrl: formattedBanner,
                               fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, __, ___) => Container(
+                              placeholder: (_, __) => Container(
                                 color: const Color(0xFF191919),
                               ),
+                              errorWidget: (_, __, ___) => Container(
+                                color: const Color(0xFF191919),
+                              ),
+                              fadeInDuration: const Duration(milliseconds: 140),
+                              fadeOutDuration: const Duration(milliseconds: 140),
                             ),
                             // Top subtle dark gradient for title readability
                             Positioned(

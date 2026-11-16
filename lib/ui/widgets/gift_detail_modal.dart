@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lottie/lottie.dart';
 import '../../core/constants.dart';
 import '../../models/user_gift.dart';
@@ -557,12 +558,13 @@ class _GiftDetailModalState extends State<GiftDetailModal> with TickerProviderSt
                                       children: [
                                         if (_ownerAvatar.isNotEmpty) ...[
                                           ClipOval(
-                                            child: Image.network(
-                                              _ownerAvatar,
+                                            child: CachedNetworkImage(
+                                              imageUrl: _ownerAvatar,
                                               width: 22,
                                               height: 22,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => _buildAvatarFallback(),
+                                              placeholder: (_, __) => _buildAvatarFallback(),
+                                              errorWidget: (_, __, ___) => _buildAvatarFallback(),
                                             ),
                                           ),
                                           const SizedBox(width: 8),

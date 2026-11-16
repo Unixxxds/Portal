@@ -131,11 +131,11 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
       reverseDuration: const Duration(milliseconds: 170),
     );
 
-    _blurAnim = Tween<double>(begin: 0.0, end: 24.0).animate(
+    _blurAnim = Tween<double>(begin: 0.0, end: 28.0).animate(
       CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic),
     );
 
-    _dimAnim = Tween<double>(begin: 0.0, end: 0.38).animate(
+    _dimAnim = Tween<double>(begin: 0.0, end: 0.50).animate(
       CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic),
     );
 
@@ -212,9 +212,9 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     final myReaction = widget.reactions.where((r) => r.userId == widget.currentUserId).firstOrNull?.emoji;
 
     // Dimensions
-    const double reactionBarWidth = 328.0;
-    const double reactionBarHeight = 46.0;
-    const double menuWidth = 245.0;
+    const double reactionBarWidth = 338.0;
+    const double reactionBarHeight = 50.0;
+    const double menuWidth = 250.0;
 
     // Calculate vertical fit
     final double rawBubbleTop = widget.bubbleRect.top;
@@ -223,7 +223,7 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
     // Height of menu
     final int itemCount = widget.isMe ? 7 : 6;
-    final double menuHeight = (itemCount * 44.0) + 12.0;
+    final double menuHeight = (itemCount * 44.0) + 14.0;
 
     // Safe margins
     final double topLimit = padding.top + 60.0;
@@ -258,11 +258,11 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
     // Tail cusp & dot positioning (aligned over the corner of the message bubble)
     final double tailX = widget.isMe
-        ? (widget.bubbleRect.right - 26.0).clamp(reactionBarLeft + 22.0, reactionBarLeft + reactionBarWidth - 22.0)
-        : (widget.bubbleRect.left + 26.0).clamp(reactionBarLeft + 22.0, reactionBarLeft + reactionBarWidth - 22.0);
+        ? (widget.bubbleRect.right - 34.0).clamp(reactionBarLeft + 32.0, reactionBarLeft + reactionBarWidth - 32.0)
+        : (widget.bubbleRect.left + 34.0).clamp(reactionBarLeft + 32.0, reactionBarLeft + reactionBarWidth - 32.0);
 
-    final double cuspY = reactionBarTop + reactionBarHeight - 1.0;
-    final double dotY = cuspY + 5.5;
+    final double cuspY = reactionBarTop + reactionBarHeight - 0.5;
+    final double dotY = cuspY + 11.0;
 
     // Action menu positioning
     final double menuTop = effectiveBubbleBottom + 8.0;
@@ -337,38 +337,38 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
                 // 3.1 Thought bubble tail: Cusp on bar bottom + 1 circle bubble dot below
                 if (_reactionBarFade.value > 0.2) ...[
-                  // Downward Cusp attached to the bar
+                  // Downward Cusp attached directly to the bar bottom
                   Positioned(
-                    left: tailX - 6.0,
+                    left: tailX - 8.0,
                     top: cuspY,
                     child: Opacity(
                       opacity: _reactionBarFade.value,
                       child: CustomPaint(
-                        size: const Size(12, 5.5),
+                        size: const Size(16.0, 8.5),
                         painter: _TailCuspPainter(
-                          color: const Color(0xB81C1C22),
-                          borderColor: const Color(0x38FFFFFF),
+                          color: const Color(0xD61E1E26),
+                          borderColor: const Color(0x30FFFFFF),
                         ),
                       ),
                     ),
                   ),
 
-                  // Floating circle bubble dot (8x8) pointing to message
+                  // Floating circle bubble dot (7.5x7.5) pointing to message
                   Positioned(
-                    left: tailX - 4.0,
+                    left: tailX - 3.75,
                     top: dotY,
                     child: Opacity(
                       opacity: _reactionBarFade.value,
                       child: ClipOval(
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                           child: Container(
-                            width: 8,
-                            height: 8,
+                            width: 7.5,
+                            height: 7.5,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: const Color(0xB81C1C22),
-                              border: Border.all(color: const Color(0x38FFFFFF), width: 0.8),
+                              color: const Color(0xD61E1E26),
+                              border: Border.all(color: const Color(0x30FFFFFF), width: 0.85),
                             ),
                           ),
                         ),
@@ -407,23 +407,23 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
   // ===========================================================================
   Widget _buildFrostedQuickReactionsBar(String? myReaction) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xB81C1C22), // Translucent dark glass
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: const Color(0x38FFFFFF), width: 0.85),
+            color: const Color(0xD61E1E26), // Translucent dark glass
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: const Color(0x30FFFFFF), width: 0.85),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.35),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
+                color: Colors.black.withOpacity(0.40),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -431,6 +431,8 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                 final int index = entry.key;
                 final String emoji = entry.value;
                 final bool isSelected = myReaction == emoji;
+                // Highlight first emoji by default (or active selected emoji) matching Telegram iOS reference
+                final bool isHighlighted = isSelected || (myReaction == null && index == 0);
 
                 final double start = (index * 0.04).clamp(0.0, 0.4);
                 final double end = (start + 0.5).clamp(0.0, 1.0);
@@ -448,17 +450,20 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      width: 34,
-                      height: 34,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0x40FFFFFF) : Colors.transparent,
+                        color: isHighlighted ? const Color(0x40000000) : Colors.transparent,
                         shape: BoxShape.circle,
+                        border: isHighlighted
+                            ? Border.all(color: const Color(0x24FFFFFF), width: 0.8)
+                            : null,
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         emoji,
                         style: const TextStyle(
-                          fontSize: 21,
+                          fontSize: 23,
                           height: 1.1,
                         ),
                       ),
@@ -475,17 +480,17 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
                     color: const Color(0x28FFFFFF),
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0x22FFFFFF), width: 0.8),
+                    border: Border.all(color: const Color(0x24FFFFFF), width: 0.8),
                   ),
                   alignment: Alignment.center,
                   child: const Icon(
                     Icons.keyboard_arrow_down_rounded,
-                    size: 19,
+                    size: 20,
                     color: Colors.white,
                   ),
                 ),
@@ -502,18 +507,18 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
   // ===========================================================================
   Widget _buildFrostedActionMenuCard(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xC41B1B20), // Translucent dark frosted glass
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x2BFFFFFF), width: 0.85),
+            color: const Color(0xD61E1E26), // Translucent dark frosted glass matching reaction bar
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0x28FFFFFF), width: 0.85),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.45),
-                blurRadius: 28,
+                blurRadius: 30,
                 offset: const Offset(0, 10),
               ),
             ],
@@ -569,9 +574,9 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
               // Divider
               Container(
-                height: 0.7,
+                height: 0.6,
                 color: const Color(0x1FFFFFFF),
-                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
               ),
 
               // 7. Выбрать
@@ -639,7 +644,7 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
   }
 }
 
-// Downward cusp connecting the reactions bar to the message bubble
+// Downward cusp connecting the reactions bar seamlessly to the message bubble
 class _TailCuspPainter extends CustomPainter {
   final Color color;
   final Color borderColor;
@@ -648,25 +653,28 @@ class _TailCuspPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final path = Path();
-    path.moveTo(0, 0);
-    path.quadraticBezierTo(size.width * 0.25, size.height * 0.45, size.width * 0.5, size.height);
-    path.quadraticBezierTo(size.width * 0.75, size.height * 0.45, size.width, 0);
-    path.close();
+    // Fill the cusp
+    final fillPath = Path()
+      ..moveTo(0, 0)
+      ..quadraticBezierTo(size.width * 0.28, size.height * 0.45, size.width * 0.5, size.height)
+      ..quadraticBezierTo(size.width * 0.72, size.height * 0.45, size.width, 0)
+      ..close();
 
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
-    canvas.drawPath(path, paint);
+    canvas.drawPath(fillPath, paint);
+
+    // Stroke ONLY the left and right downward curves (leaving top open to merge with bar border)
+    final borderPath = Path()
+      ..moveTo(0, 0)
+      ..quadraticBezierTo(size.width * 0.28, size.height * 0.45, size.width * 0.5, size.height)
+      ..quadraticBezierTo(size.width * 0.72, size.height * 0.45, size.width, 0);
 
     final borderPaint = Paint()
       ..color = borderColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    final borderPath = Path();
-    borderPath.moveTo(0, 0);
-    borderPath.quadraticBezierTo(size.width * 0.25, size.height * 0.45, size.width * 0.5, size.height);
-    borderPath.quadraticBezierTo(size.width * 0.75, size.height * 0.45, size.width, 0);
+      ..strokeWidth = 0.85;
     canvas.drawPath(borderPath, borderPaint);
   }
 

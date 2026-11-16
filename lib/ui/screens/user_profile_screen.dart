@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
@@ -129,6 +130,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
   }
 
   Future<void> _loadProfile() async {
+    // 0. Мгновенная загрузка профиля из локальной SQLite базы (0 мс)
+    final initialTargetId = widget.chat.participantId ?? widget.chat.id;
+    try {
+      final cachedUser = await DatabaseHelper.instance.getUser(initialTargetId);
+      if (cachedUser != null && mounted && _userProfile == null) {
+        setState(() {
+          _userProfile = cachedUser;
+        });
+      }
+    } catch (_) {}
+
     Map<String, dynamic>? data;
 
     // 1. Попытка загрузить по participantId
@@ -160,23 +172,24 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
 
     if (mounted) {
       int? resolvedUserId;
-      setState(() {
-        if (data != null) {
-          _userProfile = User.fromJson(data);
-          final isOnline = _userProfile!.isOnline;
-          final lastSeen = _userProfile!.lastSeen;
-          final pId = _userProfile!.id > 0 ? _userProfile!.id : (widget.chat.participantId ?? widget.chat.id);
-          resolvedUserId = pId;
-          context.read<ChatProvider>().updatePresence(
-            userId: pId,
-            chatId: widget.chat.id,
-            isOnline: isOnline,
-            lastSeen: lastSeen,
-            verification: _userProfile!.effectiveVerification,
-            isPremium: _userProfile!.isPremium,
-          );
-        }
-      });
+      if (data != null) {
+        final freshUser = User.fromJson(data);
+        _userProfile = freshUser;
+        DatabaseHelper.instance.insertUser(freshUser);
+        final isOnline = _userProfile!.isOnline;
+        final lastSeen = _userProfile!.lastSeen;
+        final pId = _userProfile!.id > 0 ? _userProfile!.id : (widget.chat.participantId ?? widget.chat.id);
+        resolvedUserId = pId;
+        context.read<ChatProvider>().updatePresence(
+          userId: pId,
+          chatId: widget.chat.id,
+          isOnline: isOnline,
+          lastSeen: lastSeen,
+          verification: _userProfile!.effectiveVerification,
+          isPremium: _userProfile!.isPremium,
+        );
+        setState(() {});
+      }
 
       // Перезагружаем подарки с подтвержденным userId пользователя
       if (resolvedUserId != null && resolvedUserId! > 0) {
@@ -300,11 +313,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                       right: 0,
                       height: 210,
                       child: formattedBanner.isNotEmpty
-                          ? Image.network(
-                              formattedBanner,
+                          ? CachedNetworkImage(
+                              imageUrl: formattedBanner,
                               fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (context, error, stackTrace) => _buildDefaultBanner(),
+                              placeholder: (context, url) => _buildDefaultBanner(),
+                              errorWidget: (context, url, error) => _buildDefaultBanner(),
+                              fadeInDuration: const Duration(milliseconds: 140),
+                              fadeOutDuration: const Duration(milliseconds: 140),
                             )
                           : _buildDefaultBanner(),
                     ),
@@ -1187,10 +1202,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 ),
                 child: ClipOval(
                   child: gift.senderAvatar.isNotEmpty
-                      ? Image.network(
-                          gift.senderAvatar,
+                      ? CachedNetworkImage(
+                          imageUrl: gift.senderAvatar,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _buildCardSenderFallback(gift),
+                          placeholder: (_, __) => _buildCardSenderFallback(gift),
+                          errorWidget: (_, __, ___) => _buildCardSenderFallback(gift),
                         )
                       : _buildCardSenderFallback(gift),
                 ),

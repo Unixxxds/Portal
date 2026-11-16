@@ -2357,16 +2357,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           },
           behavior: HitTestBehavior.opaque,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
             decoration: BoxDecoration(
               color: isMine
-                  ? (isMe ? const Color(0x3BFFFFFF) : const Color(0x383B98FF))
-                  : (isMe ? const Color(0x22FFFFFF) : const Color(0x28000000)),
+                  ? const Color(0xFF2B6DBE)
+                  : (isMe ? const Color(0x3BFFFFFF) : const Color(0xFF255A9C)),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isMine ? const Color(0x4DFFFFFF) : const Color(0x1AFFFFFF),
+                color: isMine ? const Color(0x55FFFFFF) : const Color(0x28FFFFFF),
                 width: 0.8,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.18),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1.5),
+                ),
+              ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -2374,20 +2381,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               children: [
                 Text(
                   r.emoji,
-                  style: const TextStyle(fontSize: 13.5, height: 1.1),
+                  style: const TextStyle(fontSize: 14.5, height: 1.1),
                 ),
-                const SizedBox(width: 4),
-                ClipOval(
-                  child: SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: AvatarWidget(
-                      size: 15,
-                      avatarUrl: r.userAvatar,
-                      title: r.userName.isNotEmpty ? r.userName : 'User',
+                if (r.userAvatar.isNotEmpty || r.userName.isNotEmpty) ...[
+                  const SizedBox(width: 4.5),
+                  ClipOval(
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: AvatarWidget(
+                        size: 16,
+                        avatarUrl: r.userAvatar,
+                        title: r.userName.isNotEmpty ? r.userName : 'User',
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -2668,7 +2677,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (_isGiftMessage(cleanText)) {
       cleanText = 'Подарок';
     } else if (cleanText.startsWith('[PORTAL_PHOTO]:')) {
-      cleanText = 'Фотография';
+      try {
+        final jsonStr = cleanText.substring('[PORTAL_PHOTO]:'.length).trim();
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final caption = map['caption']?.toString() ?? '';
+        cleanText = caption.isNotEmpty ? caption : 'Фотография';
+      } catch (_) {
+        cleanText = 'Фотография';
+      }
+    } else if (cleanText.startsWith('[PORTAL_STICKER]:')) {
+      cleanText = 'Стикер';
     }
 
     final screenSize = MediaQuery.of(context).size;
@@ -2802,6 +2820,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
               Expanded(
                 child: PortalEmojiPicker(
+                  showStickersTab: false,
                   onEmojiSelected: (emoji) {
                     Navigator.pop(ctx);
                     chatProvider.toggleReaction(
@@ -3116,59 +3135,94 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () => _showMessageContextMenu(msg),
-        onSecondaryTap: () => _showMessageContextMenu(msg),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          child: Stack(
-            alignment: isMe ? Alignment.bottomRight : Alignment.bottomLeft,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(4),
-                child: Image.asset(
-                  assetPath,
-                  width: 140,
-                  height: 140,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              Positioned(
-                bottom: 6,
-                right: isMe ? 6 : null,
-                left: isMe ? null : 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatMessageTime(msg.createdAt),
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          fontSize: 11,
-                          color: Colors.white,
+      child: Builder(
+        builder: (bubbleContext) {
+          final stickerBubbleWidget = Container(
+            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Column(
+              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  alignment: isMe ? Alignment.bottomRight : Alignment.bottomLeft,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Image.asset(
+                        assetPath,
+                        width: 140,
+                        height: 140,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 6,
+                      right: isMe ? 6 : null,
+                      left: isMe ? null : 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _formatMessageTime(msg.createdAt),
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                fontSize: 11,
+                                color: Colors.white,
+                              ),
+                            ),
+                            if (isMe) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                msg.isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                                size: 13,
+                                color: msg.isRead ? const Color(0xFF3B98FF) : Colors.white70,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (isMe) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          msg.isRead ? Icons.done_all_rounded : Icons.done_rounded,
-                          size: 13,
-                          color: msg.isRead ? const Color(0xFF3B98FF) : Colors.white70,
-                        ),
-                      ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        ),
+
+                // Reactions badge for sticker
+                Builder(
+                  builder: (context) {
+                    final chatProvider = context.watch<ChatProvider>();
+                    final reactions = chatProvider.getMessageReactions(msg.id);
+                    if (reactions.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _buildReactionsBadge(msg, isMe),
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+
+          return GestureDetector(
+            onLongPress: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: bubbleContext,
+              customBubbleWidget: stickerBubbleWidget,
+              isMe: isMe,
+            ),
+            onSecondaryTap: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: bubbleContext,
+              customBubbleWidget: stickerBubbleWidget,
+              isMe: isMe,
+            ),
+            child: stickerBubbleWidget,
+          );
+        },
       ),
     );
   }
@@ -3202,23 +3256,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () => _showMessageContextMenu(msg),
-        onSecondaryTap: () => _showMessageContextMenu(msg),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 2.5),
-          constraints: BoxConstraints(
-            maxWidth: bubbleWidth,
-          ),
-          child: TelegramBubble(
-            isMe: isMe,
-            padding: EdgeInsets.zero,
-            child: ClipPath(
-              clipper: TelegramBubbleClipper(isMe: isMe),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
+      child: Builder(
+        builder: (bubbleContext) {
+          final photoBubbleWidget = Container(
+            margin: const EdgeInsets.symmetric(vertical: 2.5),
+            constraints: BoxConstraints(
+              maxWidth: bubbleWidth,
+            ),
+            child: TelegramBubble(
+              isMe: isMe,
+              padding: EdgeInsets.zero,
+              child: ClipPath(
+                clipper: TelegramBubbleClipper(isMe: isMe),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   if (msg.replyToMessageId != null) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
@@ -3329,14 +3382,44 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         },
                       ),
                     ),
+
+                  // Reactions badge for photo
+                  Builder(
+                    builder: (context) {
+                      final chatProvider = context.watch<ChatProvider>();
+                      final reactions = chatProvider.getMessageReactions(msg.id);
+                      if (reactions.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: EdgeInsets.fromLTRB(10, 4, isMe ? 16 : 10, 6),
+                        child: _buildReactionsBadge(msg, isMe),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
+        );
+
+        return GestureDetector(
+          onLongPress: () => _showMessageContextMenu(
+            msg,
+            bubbleContext: bubbleContext,
+            customBubbleWidget: photoBubbleWidget,
+            isMe: isMe,
+          ),
+          onSecondaryTap: () => _showMessageContextMenu(
+            msg,
+            bubbleContext: bubbleContext,
+            customBubbleWidget: photoBubbleWidget,
+            isMe: isMe,
+          ),
+          child: photoBubbleWidget,
+        );
+      },
+    ),
+  );
+}
 
   // Floating Timestamp Capsule (Used when photo has no caption, like Telegram)
   Widget _buildFloatingTimestamp(Message msg, bool isMe) {
@@ -4316,6 +4399,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _handleTextChange(_textController.text);
   }
 
+  Future<void> _handleStickerSelected(String assetPath) async {
+    HapticFeedback.mediumImpact();
+    final provider = context.read<ChatProvider>();
+    final payload = '[PORTAL_STICKER]:{"asset":"$assetPath"}';
+    final replyId = _replyingToMessage?.id;
+    if (_replyingToMessage != null) {
+      setState(() {
+        _replyingToMessage = null;
+      });
+    }
+    try {
+      await provider.sendMessage(widget.chat.id, payload, replyToMessageId: replyId);
+      _scrollToBottom();
+    } catch (_) {}
+  }
+
   // ===========================================================================
   // FLOATING INPUT BAR (No podlozhka, 3 floating widgets)
   // ===========================================================================
@@ -4434,8 +4533,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 hintText: 'Сообщение',
                                 hintStyle: TextStyle(
                                   fontFamily: AppTheme.fontText,
-                                  color: Color(0xFF929292),
+                                  color: Color(0xFF8E8E93),
                                   fontSize: 15,
+                                  fontWeight: FontWeight.w300,
+                                  letterSpacing: -0.2,
                                   height: 1.25,
                                 ),
                                 border: InputBorder.none,
@@ -4679,6 +4780,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           PortalEmojiPicker(
             onEmojiSelected: _handleEmojiSelected,
             onBackspacePressed: _handleEmojiBackspace,
+            onStickerSelected: _handleStickerSelected,
             bottomPadding: mediaQuery.padding.bottom,
           ),
       ],

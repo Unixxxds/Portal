@@ -1201,6 +1201,18 @@ class DatabaseHelper {
     return null;
   }
 
+  // Сохранение пользователя в локальной БД
+  Future<void> insertUser(User user) async {
+    try {
+      final db = await instance.database;
+      await db.insert(
+        'users',
+        user.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
   // Вставка одного подарка в БД (при отправке или получении)
   Future<void> insertUserGift(UserGift gift) async {
     try {

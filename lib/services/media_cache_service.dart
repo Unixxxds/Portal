@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:lottie/lottie.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../core/constants.dart';
@@ -70,6 +71,29 @@ class MediaCacheService {
       return file;
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Precaches a user or chat banner image into local disk cache
+  Future<File?> precacheBanner(String? rawUrl) async {
+    if (rawUrl == null || rawUrl.isEmpty) return null;
+    return precachePhoto(rawUrl);
+  }
+
+  /// Pre-warms gift animations & catalog into memory for instant opening
+  Future<void> precacheGifts() async {
+    const giftAssets = [
+      'lib/assets/gifts/cars/lada-model-priora.png',
+      'lib/assets/gifts/gargona/Chrome-Gorgon.json',
+      'lib/assets/gifts/girl/animegirl.json',
+      'lib/assets/gifts/theel/Bumblebee.json',
+    ];
+    for (final path in giftAssets) {
+      try {
+        if (path.endsWith('.json')) {
+          AssetLottie(path).load();
+        }
+      } catch (_) {}
     }
   }
 

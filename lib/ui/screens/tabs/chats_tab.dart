@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../models/chat.dart';
@@ -154,7 +155,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       if (context.mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ChatScreen(chat: channelChat)),
+          CupertinoPageRoute(builder: (context) => ChatScreen(chat: channelChat)),
         );
       }
       return;
@@ -193,9 +194,14 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
 
     if (existing != null) {
       if (context.mounted) {
+        context.read<ChatProvider>().preloadChat(
+          existing.id,
+          participantId: existing.isChannel ? null : existing.participantId,
+          isChannel: existing.isChannel,
+        );
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ChatScreen(chat: existing!)),
+          CupertinoPageRoute(builder: (context) => ChatScreen(chat: existing!)),
         );
       }
       return;
@@ -224,9 +230,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       }
       await chatProvider.addOrUpdateChat(directChat);
       if (context.mounted) {
+        context.read<ChatProvider>().preloadChat(
+          directChat.id,
+          participantId: directChat.participantId,
+        );
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ChatScreen(chat: directChat)),
+          CupertinoPageRoute(builder: (context) => ChatScreen(chat: directChat)),
         );
       }
     } catch (_) {
@@ -243,9 +253,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       );
       await chatProvider.addOrUpdateChat(directChat);
       if (context.mounted) {
+        context.read<ChatProvider>().preloadChat(
+          directChat.id,
+          participantId: directChat.participantId,
+        );
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ChatScreen(chat: directChat)),
+          CupertinoPageRoute(builder: (context) => ChatScreen(chat: directChat)),
         );
       }
     }
@@ -808,9 +822,14 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         children: [
           InkWell(
             onTap: () {
+              context.read<ChatProvider>().preloadChat(
+                chat.id,
+                participantId: chat.isChannel ? null : chat.participantId,
+                isChannel: chat.isChannel,
+              );
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                CupertinoPageRoute(
                   builder: (context) => ChatScreen(chat: chat),
                 ),
               );

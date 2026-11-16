@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'services/media_cache_service.dart';
 import 'ui/theme.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/main_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Background pre-warming of gift assets & disk cache
+  MediaCacheService.instance.precacheGifts();
 
   runApp(
     MultiProvider(
