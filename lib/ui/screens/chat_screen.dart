@@ -12,6 +12,7 @@ import '../../core/constants.dart';
 import '../../core/user_activity_helper.dart';
 import '../../models/chat.dart';
 import '../../models/message.dart';
+import '../../models/message_reaction.dart';
 import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -30,6 +31,7 @@ import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/portal_emoji_picker.dart';
 import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_bubble.dart';
+import '../widgets/telegram_message_context_menu.dart';
 import '../widgets/telegram_message_entrance.dart';
 import '../widgets/telegram_profile_route.dart';
 import '../widgets/telegram_swipe_to_reply.dart';
@@ -2250,48 +2252,147 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: () => _showMessageContextMenu(msg),
-        onSecondaryTap: () => _showMessageContextMenu(msg),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 2.5),
-          constraints: BoxConstraints(
-            maxWidth: maxBubbleWidth,
-            minWidth: 50,
-          ),
-          child: TelegramBubble(
-            isMe: isMe,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Replied Message Quote (if any)
-                if (msg.replyToMessageId != null) ...[
-                  _buildReplyPreviewInBubble(msg.replyToMessageId!),
-                  const SizedBox(height: 5),
-                ],
+      child: Builder(
+        builder: (bubbleContext) {
+          final bubbleWidget = _buildBubbleBody(msg, isMe, maxBubbleWidth);
+          return GestureDetector(
+            onLongPress: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: bubbleContext,
+              customBubbleWidget: Container(
+                constraints: BoxConstraints(
+                  maxWidth: maxBubbleWidth,
+                  minWidth: 50,
+                ),
+                child: bubbleWidget,
+              ),
+              isMe: isMe,
+            ),
+            onSecondaryTap: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: bubbleContext,
+              customBubbleWidget: Container(
+                constraints: BoxConstraints(
+                  maxWidth: maxBubbleWidth,
+                  minWidth: 50,
+                ),
+                child: bubbleWidget,
+              ),
+              isMe: isMe,
+            ),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 2.5),
+              constraints: BoxConstraints(
+                maxWidth: maxBubbleWidth,
+                minWidth: 50,
+              ),
+              child: bubbleWidget,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
-                // Sender name if in group
-                if (!isMe && msg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
-                  Text(
-                    msg.senderName,
-                    style: const TextStyle(
-                      fontFamily: AppTheme.fontDisplay,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
+  Widget _buildBubbleBody(Message msg, bool isMe, double maxBubbleWidth) {
+    return TelegramBubble(
+      isMe: isMe,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Replied Message Quote (if any)
+          if (msg.replyToMessageId != null) ...[
+            _buildReplyPreviewInBubble(msg.replyToMessageId!),
+            const SizedBox(height: 5),
+          ],
+
+          // Sender name if in group
+          if (!isMe && msg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
+            Text(
+              msg.senderName,
+              style: const TextStyle(
+                fontFamily: AppTheme.fontDisplay,
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 3),
+          ],
+
+          // Message text & time (Telegram inline layout)
+          _buildMessageTextWithTime(msg, isMe, maxBubbleWidth),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReactionsBadge(Message msg, bool isMe) {
+    final chatProvider = context.watch<ChatProvider>();
+    final reactions = chatProvider.getMessageReactions(msg.id);
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id ?? 0;
+    final currentUserName = authProvider.currentUser?.displayName ?? '';
+    final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: reactions.map((r) {
+        final isMine = r.userId == currentUserId;
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            chatProvider.toggleReaction(
+              widget.chat.id,
+              msg.id,
+              r.emoji,
+              userId: currentUserId,
+              userName: currentUserName,
+              userAvatar: currentUserAvatar,
+            );
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: isMine
+                  ? (isMe ? const Color(0x3BFFFFFF) : const Color(0x383B98FF))
+                  : (isMe ? const Color(0x22FFFFFF) : const Color(0x28000000)),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isMine ? const Color(0x4DFFFFFF) : const Color(0x1AFFFFFF),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  r.emoji,
+                  style: const TextStyle(fontSize: 13.5, height: 1.1),
+                ),
+                const SizedBox(width: 4),
+                ClipOval(
+                  child: SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: AvatarWidget(
+                      size: 15,
+                      avatarUrl: r.userAvatar,
+                      title: r.userName.isNotEmpty ? r.userName : 'User',
                     ),
                   ),
-                  const SizedBox(height: 3),
-                ],
-
-                // Message text & time (Telegram inline layout)
-                _buildMessageTextWithTime(msg, isMe, maxBubbleWidth),
+                ),
               ],
             ),
           ),
-        ),
-      ),
+        );
+      }).toList(),
     );
   }
 
@@ -2339,6 +2440,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ],
     );
+
+    final chatProvider = context.watch<ChatProvider>();
+    final reactions = chatProvider.getMessageReactions(msg.id);
+    final hasReactions = reactions.isNotEmpty;
+
+    if (hasReactions) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FormattedMessageText(
+            text: msg.text,
+            messageId: msg.id,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontText,
+              color: Colors.white,
+              fontSize: 15.5,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildReactionsBadge(msg, isMe),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2.0),
+                child: timeWidget,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
 
     final bool hasNewlines = msg.text.contains('\n');
     final bool hasQuote = msg.text.contains('>') || msg.text.contains('[QUOTE]');
@@ -2511,8 +2648,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ===========================================================================
   // MESSAGE CONTEXT MENU POPUP (1:1 with Reference Screenshot)
   // ===========================================================================
-  void _showMessageContextMenu(Message msg) {
+  void _showMessageContextMenu(
+    Message msg, {
+    BuildContext? bubbleContext,
+    Widget? customBubbleWidget,
+    bool? isMe,
+  }) {
     final chatProvider = context.read<ChatProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id ?? 0;
+    final currentUserName = authProvider.currentUser?.displayName ?? '';
+    final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
+    final bool me = isMe ?? (msg.senderId == currentUserId);
+
     final currentPinned = chatProvider.getPinnedMessage(widget.chat.id);
     final isCurrentlyPinned = currentPinned?.id == msg.id;
 
@@ -2523,138 +2671,234 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       cleanText = 'Фотография';
     }
 
-    showDialog(
+    final screenSize = MediaQuery.of(context).size;
+    Rect bubbleRect;
+    if (bubbleContext != null) {
+      final box = bubbleContext.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        bubbleRect = box.localToGlobal(Offset.zero) & box.size;
+      } else {
+        bubbleRect = Rect.fromCenter(
+          center: Offset(screenSize.width / 2, screenSize.height / 2),
+          width: screenSize.width * 0.75,
+          height: 60,
+        );
+      }
+    } else {
+      bubbleRect = Rect.fromCenter(
+        center: Offset(screenSize.width / 2, screenSize.height / 2),
+        width: screenSize.width * 0.75,
+        height: 60,
+      );
+    }
+
+    final double maxBubbleWidth = screenSize.width * 0.78;
+    final Widget bubbleWidget = customBubbleWidget ??
+        Container(
+          constraints: BoxConstraints(maxWidth: maxBubbleWidth, minWidth: 50),
+          child: _buildBubbleBody(msg, me, maxBubbleWidth),
+        );
+
+    TelegramMessageContextMenu.show(
       context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.65),
-      builder: (dialogContext) {
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 250,
-              decoration: BoxDecoration(
-                color: const Color(0xFF191919),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.6),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+      message: msg,
+      bubbleRect: bubbleRect,
+      bubbleWidget: bubbleWidget,
+      isMe: me,
+      isCurrentlyPinned: isCurrentlyPinned,
+      reactions: chatProvider.getMessageReactions(msg.id),
+      currentUserId: currentUserId,
+      onReply: () {
+        setState(() {
+          _replyingToMessage = msg;
+          _editingMessage = null;
+        });
+      },
+      onCopy: () {
+        Clipboard.setData(ClipboardData(text: cleanText));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Текст скопирован'),
+            duration: Duration(milliseconds: 1400),
+            backgroundColor: Color(0xFF191919),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      onPin: () {
+        chatProvider.togglePinMessage(widget.chat.id, msg.id);
+      },
+      onForward: () {
+        _showForwardMessageSheet(msg);
+      },
+      onEdit: me
+          ? () {
+              setState(() {
+                _editingMessage = msg;
+                _replyingToMessage = null;
+                _textController.text = cleanText;
+                _textController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _textController.text.length),
+                );
+              });
+            }
+          : null,
+      onDelete: () {
+        chatProvider.deleteMessage(widget.chat.id, msg.id);
+      },
+      onSelect: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Сообщение выбрано'),
+            duration: Duration(milliseconds: 1200),
+            backgroundColor: Color(0xFF191919),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      onReaction: (emoji) {
+        chatProvider.toggleReaction(
+          widget.chat.id,
+          msg.id,
+          emoji,
+          userId: currentUserId,
+          userName: currentUserName,
+          userAvatar: currentUserAvatar,
+        );
+      },
+      onOpenCustomEmojiPicker: () {
+        _showCustomReactionPicker(msg);
+      },
+    );
+  }
+
+  void _showCustomReactionPicker(Message msg) {
+    final chatProvider = context.read<ChatProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id ?? 0;
+    final currentUserName = authProvider.currentUser?.displayName ?? '';
+    final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF191919),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SizedBox(
+          height: 320,
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 1. Ответить
-                  _buildContextMenuItem(
-                    icon: Icons.reply_rounded,
-                    title: 'Ответить',
-                    onTap: () {
-                      Navigator.pop(dialogContext);
-                      setState(() {
-                        _replyingToMessage = msg;
-                        _editingMessage = null;
-                      });
-                    },
-                  ),
+              Expanded(
+                child: PortalEmojiPicker(
+                  onEmojiSelected: (emoji) {
+                    Navigator.pop(ctx);
+                    chatProvider.toggleReaction(
+                      widget.chat.id,
+                      msg.id,
+                      emoji,
+                      userId: currentUserId,
+                      userName: currentUserName,
+                      userAvatar: currentUserAvatar,
+                    );
+                  },
+                  onBackspacePressed: () {},
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
-                  // 2. Редактировать
-                  _buildContextMenuItem(
-                    icon: Icons.edit_outlined,
-                    title: 'Редактировать',
-                    onTap: () {
-                      Navigator.pop(dialogContext);
-                      setState(() {
-                        _editingMessage = msg;
-                        _replyingToMessage = null;
-                        _textController.text = cleanText;
-                        _textController.selection = TextSelection.fromPosition(
-                          TextPosition(offset: _textController.text.length),
-                        );
-                      });
-                    },
-                  ),
-
-                  // 3. Закрепить / Открепить
-                  _buildContextMenuItem(
-                    icon: Icons.push_pin_outlined,
-                    title: isCurrentlyPinned ? 'Открепить' : 'Закрепить',
-                    onTap: () {
-                      Navigator.pop(dialogContext);
-                      chatProvider.togglePinMessage(widget.chat.id, msg.id);
-                    },
-                  ),
-
-                  // 3. Копировать текст
-                  _buildContextMenuItem(
-                    icon: Icons.copy_rounded,
-                    title: 'Копировать текст',
-                    onTap: () {
-                      Navigator.pop(dialogContext);
-                      Clipboard.setData(ClipboardData(text: cleanText));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Текст скопирован'),
-                          duration: Duration(milliseconds: 1400),
-                          backgroundColor: Color(0xFF191919),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Divider
-                  Container(
-                    height: 1,
-                    color: const Color(0x14FFFFFF),
-                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  ),
-
-                  // 4. Удалить
-                  _buildContextMenuItem(
-                    icon: Icons.delete_outline_rounded,
-                    title: 'Удалить',
-                    isDestructive: true,
-                    onTap: () {
-                      Navigator.pop(dialogContext);
-                      chatProvider.deleteMessage(widget.chat.id, msg.id);
-                    },
-                  ),
-
-                  // Bottom Message Date Status
-                  Container(
-                    height: 1,
-                    color: const Color(0x14FFFFFF),
-                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          msg.isRead ? Icons.done_all_rounded : Icons.check_rounded,
-                          size: 15,
-                          color: const Color(0xFF3B98FF),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatContextMenuDate(msg.createdAt),
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            fontSize: 12,
-                            color: Color(0xFF929292),
-                          ),
-                        ),
-                      ],
+  void _showForwardMessageSheet(Message msg) {
+    final chats = context.read<ChatProvider>().chats;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E22),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Переслать сообщение',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+              const Divider(color: Color(0x1AFFFFFF), height: 1),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: chats.length,
+                  itemBuilder: (c, i) {
+                    final targetChat = chats[i];
+                    return ListTile(
+                      leading: AvatarWidget(
+                        avatarUrl: targetChat.avatar,
+                        title: targetChat.title,
+                        size: 40,
+                        isChannel: targetChat.isChannel,
+                      ),
+                      title: Text(
+                        targetChat.title,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        context.read<ChatProvider>().sendMessage(
+                          targetChat.id,
+                          msg.text,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Переслано в "${targetChat.title}"'),
+                            backgroundColor: const Color(0xFF191919),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         );
       },

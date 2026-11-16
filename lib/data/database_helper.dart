@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/user.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/message_reaction.dart';
 import '../models/user_gift.dart';
 import 'secure_storage_service.dart';
 
@@ -172,8 +173,23 @@ class DatabaseHelper {
           );
         ''');
 
+        await db.execute('''
+          CREATE TABLE message_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji TEXT NOT NULL,
+            user_name TEXT,
+            user_avatar TEXT,
+            created_at TEXT
+          );
+        ''');
+
         await db.execute('CREATE INDEX idx_messages_chat ON messages(chat_id, id DESC);');
         await db.execute('CREATE INDEX idx_user_gifts_user ON user_gifts(user_id);');
+        await db.execute('CREATE INDEX idx_reactions_msg ON message_reactions(message_id);');
+        await db.execute('CREATE INDEX idx_reactions_chat ON message_reactions(chat_id);');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         await _checkAndUpgradeSchema(db);
@@ -206,6 +222,9 @@ class DatabaseHelper {
               await db.delete('messages');
               await db.delete('users');
               await db.delete('user_gifts');
+              try {
+                await db.delete('message_reactions');
+              } catch (_) {}
             }
           }
         }
@@ -334,6 +353,21 @@ class DatabaseHelper {
         );
       ''');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS message_reactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER NOT NULL,
+          chat_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          emoji TEXT NOT NULL,
+          user_name TEXT,
+          user_avatar TEXT,
+          created_at TEXT
+        );
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_reactions_msg ON message_reactions(message_id);');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_reactions_chat ON message_reactions(chat_id);');
     } catch (_) {}
   }
 
@@ -824,6 +858,166 @@ class DatabaseHelper {
         whereArgs: [messageId],
       );
     } catch (_) {}
+  }
+
+  // ===========================================================================
+  // MESSAGE REACTIONS (Shared across accounts for 100% sync)
+  // ===========================================================================
+
+  static Database? _sharedReactionsDb;
+
+  Future<Database> get sharedReactionsDatabase async {
+    if (_sharedReactionsDb != null && _sharedReactionsDb!.isOpen) {
+      return _sharedReactionsDb!;
+    }
+    if (Platform.isWindows || Platform.isLinux) {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    }
+    final dbPath = await getApplicationDocumentsDirectory();
+    final path = join(dbPath.path, 'portal_shared_reactions.db');
+    _sharedReactionsDb = await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, v) async {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS message_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji TEXT NOT NULL,
+            user_name TEXT,
+            user_avatar TEXT,
+            created_at TEXT
+          );
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_reactions_msg ON message_reactions(message_id);');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_reactions_chat ON message_reactions(chat_id);');
+      },
+    );
+    return _sharedReactionsDb!;
+  }
+
+  Future<void> saveReaction(MessageReaction reaction) async {
+    try {
+      final sharedDb = await sharedReactionsDatabase;
+      await sharedDb.delete(
+        'message_reactions',
+        where: 'message_id = ? AND user_id = ?',
+        whereArgs: [reaction.messageId, reaction.userId],
+      );
+      await sharedDb.insert(
+        'message_reactions',
+        reaction.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+
+    try {
+      final db = await instance.database;
+      await db.delete(
+        'message_reactions',
+        where: 'message_id = ? AND user_id = ?',
+        whereArgs: [reaction.messageId, reaction.userId],
+      );
+      await db.insert(
+        'message_reactions',
+        reaction.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> removeReaction(int messageId, int userId) async {
+    try {
+      final sharedDb = await sharedReactionsDatabase;
+      await sharedDb.delete(
+        'message_reactions',
+        where: 'message_id = ? AND user_id = ?',
+        whereArgs: [messageId, userId],
+      );
+    } catch (_) {}
+
+    try {
+      final db = await instance.database;
+      await db.delete(
+        'message_reactions',
+        where: 'message_id = ? AND user_id = ?',
+        whereArgs: [messageId, userId],
+      );
+    } catch (_) {}
+  }
+
+  Future<List<MessageReaction>> getReactionsForChat(
+    int chatId, {
+    int? alternateChatId,
+    List<int>? messageIds,
+  }) async {
+    try {
+      final sharedDb = await sharedReactionsDatabase;
+      List<Map<String, dynamic>> maps = [];
+      if (messageIds != null && messageIds.isNotEmpty) {
+        final idsList = messageIds.join(',');
+        maps = await sharedDb.rawQuery(
+          'SELECT * FROM message_reactions WHERE message_id IN ($idsList) OR chat_id = ? OR chat_id = ?',
+          [chatId, alternateChatId ?? 0],
+        );
+      } else if (alternateChatId != null && alternateChatId != chatId && alternateChatId > 0) {
+        maps = await sharedDb.query(
+          'message_reactions',
+          where: 'chat_id = ? OR chat_id = ?',
+          whereArgs: [chatId, alternateChatId],
+        );
+      } else {
+        maps = await sharedDb.query(
+          'message_reactions',
+          where: 'chat_id = ?',
+          whereArgs: [chatId],
+        );
+      }
+      if (maps.isNotEmpty) {
+        return maps.map((m) => MessageReaction.fromMap(m)).toList();
+      }
+    } catch (_) {}
+
+    try {
+      final db = await instance.database;
+      final maps = await db.query(
+        'message_reactions',
+        where: 'chat_id = ? OR chat_id = ?',
+        whereArgs: [chatId, alternateChatId ?? 0],
+      );
+      return maps.map((m) => MessageReaction.fromMap(m)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<MessageReaction>> getReactionsForMessage(int messageId) async {
+    try {
+      final sharedDb = await sharedReactionsDatabase;
+      final maps = await sharedDb.query(
+        'message_reactions',
+        where: 'message_id = ?',
+        whereArgs: [messageId],
+      );
+      if (maps.isNotEmpty) {
+        return maps.map((m) => MessageReaction.fromMap(m)).toList();
+      }
+    } catch (_) {}
+
+    try {
+      final db = await instance.database;
+      final maps = await db.query(
+        'message_reactions',
+        where: 'message_id = ?',
+        whereArgs: [messageId],
+      );
+      return maps.map((m) => MessageReaction.fromMap(m)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   // Обновление количества просмотров сообщения

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/message_reaction.dart';
 import '../models/user.dart';
 import '../models/user_gift.dart';
 import '../data/database_helper.dart';
@@ -27,6 +28,8 @@ class ChatProvider with ChangeNotifier {
   final Map<int, bool> _userPresence = {};
   // Realtime pinned message per chat: {chatId: Message?}
   final Map<int, Message?> _pinnedMessages = {};
+  // Realtime message reactions: {messageId: List<MessageReaction>}
+  final Map<int, List<MessageReaction>> _reactionsByMessage = {};
 
   StreamSubscription? _wsSubscription;
 
@@ -38,6 +41,7 @@ class ChatProvider with ChangeNotifier {
   String? get syncError => _syncError;
 
   Message? getPinnedMessage(int chatId) => _pinnedMessages[chatId];
+  List<MessageReaction> getMessageReactions(int messageId) => _reactionsByMessage[messageId] ?? [];
 
   List<Message> get activeMessages {
     if (_activeChatId == null) return [];
@@ -257,6 +261,12 @@ class ChatProvider with ChangeNotifier {
 
     // Загружаем закрепленное сообщение
     loadPinnedMessage(chatId);
+    // Загружаем реакции к сообщениям
+    loadReactionsForChat(
+      chatId,
+      alternateChatId: participantId,
+      messageIds: localMsgs.map((m) => m.id).toList(),
+    );
 
     // Загружаем актуальную историю с сервера
     try {
@@ -299,6 +309,11 @@ class ChatProvider with ChangeNotifier {
         if (!isChannel && participantId != null && participantId != chatId) {
           _messagesByChat[participantId] = refreshedMsgs;
         }
+        loadReactionsForChat(
+          chatId,
+          alternateChatId: participantId,
+          messageIds: refreshedMsgs.map((m) => m.id).toList(),
+        );
         for (final m in refreshedMsgs) {
           if (m.text.contains('[PORTAL_PHOTO]:')) {
             MediaCacheService.instance.precacheMessagePhotos(m.text);
@@ -431,6 +446,90 @@ class ChatProvider with ChangeNotifier {
       _pinnedMessages.remove(chatId);
       notifyListeners();
     } catch (_) {}
+  }
+
+  // ===========================================================================
+  // MESSAGE REACTIONS
+  // ===========================================================================
+
+  Future<void> loadReactionsForChat(int chatId, {int? alternateChatId, List<int>? messageIds}) async {
+    try {
+      final list = await DatabaseHelper.instance.getReactionsForChat(
+        chatId,
+        alternateChatId: alternateChatId,
+        messageIds: messageIds,
+      );
+      final grouped = <int, List<MessageReaction>>{};
+      for (final r in list) {
+        grouped.putIfAbsent(r.messageId, () => []).add(r);
+      }
+      for (final entry in grouped.entries) {
+        _reactionsByMessage[entry.key] = entry.value;
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> toggleReaction(
+    int chatId,
+    int messageId,
+    String emoji, {
+    required int userId,
+    required String userName,
+    required String userAvatar,
+  }) async {
+    final existingList = List<MessageReaction>.from(_reactionsByMessage[messageId] ?? []);
+    final existingIndex = existingList.indexWhere((r) => r.userId == userId);
+
+    bool isRemoved = false;
+    if (existingIndex != -1) {
+      if (existingList[existingIndex].emoji == emoji) {
+        // Та же реакция — снимаем её (toggle off)
+        existingList.removeAt(existingIndex);
+        isRemoved = true;
+        await DatabaseHelper.instance.removeReaction(messageId, userId);
+      } else {
+        // Другая реакция — заменяем
+        final updated = MessageReaction(
+          id: existingList[existingIndex].id,
+          messageId: messageId,
+          chatId: chatId,
+          userId: userId,
+          emoji: emoji,
+          userName: userName,
+          userAvatar: userAvatar,
+          createdAt: DateTime.now().toIso8601String(),
+        );
+        existingList[existingIndex] = updated;
+        await DatabaseHelper.instance.saveReaction(updated);
+      }
+    } else {
+      // Новая реакция — добавляем
+      final created = MessageReaction(
+        messageId: messageId,
+        chatId: chatId,
+        userId: userId,
+        emoji: emoji,
+        userName: userName,
+        userAvatar: userAvatar,
+        createdAt: DateTime.now().toIso8601String(),
+      );
+      existingList.add(created);
+      await DatabaseHelper.instance.saveReaction(created);
+    }
+
+    _reactionsByMessage[messageId] = existingList;
+    notifyListeners();
+
+    WebSocketService.instance.sendReaction(
+      chatId,
+      messageId,
+      emoji,
+      isRemoved: isRemoved,
+      userId: userId,
+      userName: userName,
+      userAvatar: userAvatar,
+    );
   }
 
   Future<void> editMessage(int chatId, int messageId, String newText) async {
@@ -1106,6 +1205,47 @@ class ChatProvider with ChangeNotifier {
                 (event['commentsCount'] is int ? event['commentsCount'] as int : int.tryParse(event['commentsCount']?.toString() ?? '') ?? 0);
         if (messageId > 0 && commentsCount > 0) {
           updateMessageCommentsCount(messageId, commentsCount);
+        }
+        break;
+
+      case 'message_reaction':
+        final chatId = event['chat_id'] is int
+            ? event['chat_id'] as int
+            : int.tryParse(event['chat_id']?.toString() ?? '') ??
+                (event['chatId'] is int ? event['chatId'] as int : int.tryParse(event['chatId']?.toString() ?? '') ?? 0);
+        final messageId = event['message_id'] is int
+            ? event['message_id'] as int
+            : int.tryParse(event['message_id']?.toString() ?? '') ??
+                (event['messageId'] is int ? event['messageId'] as int : int.tryParse(event['messageId']?.toString() ?? '') ?? 0);
+        final userId = event['user_id'] is int
+            ? event['user_id'] as int
+            : int.tryParse(event['user_id']?.toString() ?? '') ??
+                (event['userId'] is int ? event['userId'] as int : int.tryParse(event['userId']?.toString() ?? '') ?? 0);
+        final emoji = event['emoji']?.toString() ?? '';
+        final isRemoved = event['is_removed'] == true || event['is_removed'] == 1;
+        final userName = event['user_name']?.toString() ?? event['sender_name']?.toString() ?? '';
+        final userAvatar = event['user_avatar']?.toString() ?? event['sender_avatar']?.toString() ?? '';
+
+        if (messageId > 0 && userId > 0) {
+          final list = List<MessageReaction>.from(_reactionsByMessage[messageId] ?? []);
+          list.removeWhere((r) => r.userId == userId);
+          if (!isRemoved && emoji.isNotEmpty) {
+            final reaction = MessageReaction(
+              messageId: messageId,
+              chatId: chatId,
+              userId: userId,
+              emoji: emoji,
+              userName: userName,
+              userAvatar: userAvatar,
+              createdAt: DateTime.now().toIso8601String(),
+            );
+            list.add(reaction);
+            await DatabaseHelper.instance.saveReaction(reaction);
+          } else {
+            await DatabaseHelper.instance.removeReaction(messageId, userId);
+          }
+          _reactionsByMessage[messageId] = list;
+          notifyListeners();
         }
         break;
     }
