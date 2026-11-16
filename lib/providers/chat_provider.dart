@@ -281,6 +281,14 @@ class ChatProvider with ChangeNotifier {
         }
         final List<Message> msgObjects = [];
         for (final m in remoteMsgs) {
+          final mId = m['id'] is int ? m['id'] as int : int.tryParse(m['id']?.toString() ?? '') ?? 0;
+          if (mId > 0 && m['reactions'] is List) {
+            final rList = (m['reactions'] as List)
+                .map((r) => MessageReaction.fromMap(r as Map<String, dynamic>, fallbackChatId: chatId))
+                .toList();
+            _reactionsByMessage[mId] = rList;
+            await DatabaseHelper.instance.replaceReactionsForMessage(mId, rList);
+          }
           final msgObj = Message.fromJson(m, fallbackChatId: chatId);
           msgObjects.add(msgObj);
           final trimmedText = msgObj.text.trim();
@@ -521,15 +529,18 @@ class ChatProvider with ChangeNotifier {
     _reactionsByMessage[messageId] = existingList;
     notifyListeners();
 
-    WebSocketService.instance.sendReaction(
-      chatId,
-      messageId,
-      emoji,
-      isRemoved: isRemoved,
-      userId: userId,
-      userName: userName,
-      userAvatar: userAvatar,
-    );
+    // 2. Отправка через WebSocket на сервер (WS event: toggle_reaction)
+    WebSocketService.instance.sendReaction(chatId, messageId, emoji);
+
+    // 3. Отправка через REST API на сервер (POST /api/messages/:id/reactions)
+    try {
+      final serverReactions = await ApiService.instance.toggleReaction(messageId, emoji);
+      if (serverReactions != null) {
+        _reactionsByMessage[messageId] = serverReactions;
+        await DatabaseHelper.instance.replaceReactionsForMessage(messageId, serverReactions);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Future<void> editMessage(int chatId, int messageId, String newText) async {
@@ -946,6 +957,16 @@ class ChatProvider with ChangeNotifier {
             MediaCacheService.instance.precacheMessagePhotos(msg.text);
           }
 
+          if (msgData['reactions'] is List) {
+            final rList = (msgData['reactions'] as List)
+                .map((r) => MessageReaction.fromMap(r as Map<String, dynamic>, fallbackChatId: msg.chatId))
+                .toList();
+            if (msg.id > 0 && rList.isNotEmpty) {
+              _reactionsByMessage[msg.id] = rList;
+              DatabaseHelper.instance.replaceReactionsForMessage(msg.id, rList);
+            }
+          }
+
           final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
           final isFromMe = (msg.senderId > 0 && currentUserId > 0 && msg.senderId == currentUserId);
 
@@ -1205,6 +1226,24 @@ class ChatProvider with ChangeNotifier {
                 (event['commentsCount'] is int ? event['commentsCount'] as int : int.tryParse(event['commentsCount']?.toString() ?? '') ?? 0);
         if (messageId > 0 && commentsCount > 0) {
           updateMessageCommentsCount(messageId, commentsCount);
+        }
+        break;
+
+      case 'message_reaction_updated':
+        final chatId = event['chatId'] is int
+            ? event['chatId'] as int
+            : int.tryParse(event['chatId']?.toString() ?? event['chat_id']?.toString() ?? '') ?? 0;
+        final messageId = event['messageId'] is int
+            ? event['messageId'] as int
+            : int.tryParse(event['messageId']?.toString() ?? event['message_id']?.toString() ?? '') ?? 0;
+        final rawReactions = event['reactions'];
+        if (messageId > 0 && rawReactions is List) {
+          final list = rawReactions
+              .map((r) => MessageReaction.fromMap(r as Map<String, dynamic>, fallbackChatId: chatId))
+              .toList();
+          _reactionsByMessage[messageId] = list;
+          await DatabaseHelper.instance.replaceReactionsForMessage(messageId, list);
+          notifyListeners();
         }
         break;
 

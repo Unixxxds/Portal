@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../core/constants.dart';
 import '../data/secure_storage_service.dart';
+import '../models/message_reaction.dart';
 import '../models/post_comment.dart';
 
 class ApiService {
@@ -286,6 +287,25 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('ApiService.getPinnedMessage error: $e');
+    }
+    return null;
+  }
+
+  // 6.4 Переключение реакции на сообщение (POST /api/messages/:messageId/reactions)
+  Future<List<MessageReaction>?> toggleReaction(int messageId, String emoji) async {
+    try {
+      final response = await _dio.post(
+        '/api/messages/$messageId/reactions',
+        data: {'emoji': emoji},
+      );
+      if (response.data is Map && response.data['reactions'] is List) {
+        final list = (response.data['reactions'] as List)
+            .map((r) => MessageReaction.fromMap(r as Map<String, dynamic>))
+            .toList();
+        return list;
+      }
+    } catch (e) {
+      debugPrint('ApiService.toggleReaction error: $e');
     }
     return null;
   }

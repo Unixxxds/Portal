@@ -54,17 +54,33 @@ class MessageReaction {
     };
   }
 
-  factory MessageReaction.fromMap(Map<String, dynamic> map) {
+  factory MessageReaction.fromMap(Map<String, dynamic> map, {int fallbackChatId = 0}) {
+    final rawName = map['user_name'] ?? map['userName'];
+    String name = rawName?.toString() ?? '';
+    if (name.isEmpty) {
+      final fName = map['first_name']?.toString() ?? '';
+      final lName = map['last_name']?.toString() ?? '';
+      name = '$fName $lName'.trim();
+      if (name.isEmpty) {
+        name = map['username']?.toString() ?? '';
+      }
+    }
+
     return MessageReaction(
-      id: map['id'] as int?,
-      messageId: (map['message_id'] as int? ?? map['messageId'] as int? ?? 0),
-      chatId: (map['chat_id'] as int? ?? map['chatId'] as int? ?? 0),
-      userId: (map['user_id'] as int? ?? map['userId'] as int? ?? 0),
+      id: map['id'] is int ? map['id'] as int : int.tryParse(map['id']?.toString() ?? ''),
+      messageId: map['message_id'] is int
+          ? map['message_id'] as int
+          : int.tryParse(map['message_id']?.toString() ?? map['messageId']?.toString() ?? '') ?? 0,
+      chatId: map['chat_id'] is int
+          ? map['chat_id'] as int
+          : int.tryParse(map['chat_id']?.toString() ?? map['chatId']?.toString() ?? '') ?? fallbackChatId,
+      userId: map['user_id'] is int
+          ? map['user_id'] as int
+          : int.tryParse(map['user_id']?.toString() ?? map['userId']?.toString() ?? '') ?? 0,
       emoji: map['emoji']?.toString() ?? '',
-      userName: map['user_name']?.toString() ?? map['userName']?.toString() ?? '',
-      userAvatar: map['user_avatar']?.toString() ?? map['userAvatar']?.toString() ?? '',
-      createdAt: map['created_at']?.toString() ?? map['createdAt']?.toString() ?? '',
+      userName: name,
+      userAvatar: map['user_avatar']?.toString() ?? map['userAvatar']?.toString() ?? map['avatar']?.toString() ?? '',
+      createdAt: map['created_at']?.toString() ?? '',
     );
   }
 }
-

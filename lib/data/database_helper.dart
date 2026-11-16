@@ -899,6 +899,40 @@ class DatabaseHelper {
     return _sharedReactionsDb!;
   }
 
+  Future<void> replaceReactionsForMessage(int messageId, List<MessageReaction> reactions) async {
+    try {
+      final sharedDb = await sharedReactionsDatabase;
+      await sharedDb.delete(
+        'message_reactions',
+        where: 'message_id = ?',
+        whereArgs: [messageId],
+      );
+      for (final r in reactions) {
+        await sharedDb.insert(
+          'message_reactions',
+          r.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } catch (_) {}
+
+    try {
+      final db = await instance.database;
+      await db.delete(
+        'message_reactions',
+        where: 'message_id = ?',
+        whereArgs: [messageId],
+      );
+      for (final r in reactions) {
+        await db.insert(
+          'message_reactions',
+          r.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } catch (_) {}
+  }
+
   Future<void> saveReaction(MessageReaction reaction) async {
     try {
       final sharedDb = await sharedReactionsDatabase;

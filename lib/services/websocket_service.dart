@@ -158,29 +158,17 @@ class WebSocketService {
   void sendReaction(
     int chatId,
     int messageId,
-    String emoji, {
-    bool isRemoved = false,
-    int? userId,
-    String? userName,
-    String? userAvatar,
-  }) {
+    String emoji,
+  ) {
     if (_isConnected && _channel != null) {
       try {
         _channel!.sink.add(jsonEncode({
-          'type': 'message_reaction',
-          'chat_id': chatId,
-          'chatId': chatId,
-          'message_id': messageId,
+          'type': 'toggle_reaction',
           'messageId': messageId,
+          'message_id': messageId,
+          'chatId': chatId,
+          'chat_id': chatId,
           'emoji': emoji,
-          'is_removed': isRemoved,
-          'isRemoved': isRemoved,
-          if (userId != null) 'user_id': userId,
-          if (userId != null) 'userId': userId,
-          if (userName != null) 'user_name': userName,
-          if (userName != null) 'userName': userName,
-          if (userAvatar != null) 'user_avatar': userAvatar,
-          if (userAvatar != null) 'userAvatar': userAvatar,
         }));
       } catch (_) {}
     }
