@@ -12,6 +12,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/qr_matrix.dart';
 import '../../models/chat.dart';
 import '../../providers/auth_provider.dart';
@@ -161,7 +162,9 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
     final rawUname = user?.username ?? '';
     final cleanUname = rawUname.replaceFirst(RegExp(r'^@+'), '');
     final displayUsername = cleanUname.isNotEmpty ? cleanUname.toUpperCase() : 'USER';
-    final qrPayload = 'https://portalmsg.ru/$cleanUname';
+    final qrPayload = cleanUname.isNotEmpty
+        ? 'https://portalmsg.ru/$cleanUname'
+        : 'https://portalmsg.ru/id${user?.id ?? 0}';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -274,25 +277,38 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // QR Code with Portal Logo in central black circle
+                          // QR Code with Portal Logo in central black circle (Standard ISO H-level error correction)
                           SizedBox(
                             width: 245,
                             height: 245,
-                            child: CustomPaint(
-                              painter: PortalQrPainter(
-                                data: qrPayload,
-                              ),
-                              child: Center(
-                                child: Container(
-                                  width: 66,
-                                  height: 66,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                QrImageView(
+                                  data: qrPayload,
+                                  version: QrVersions.auto,
+                                  size: 245.0,
+                                  errorCorrectionLevel: QrErrorCorrectLevel.H,
+                                  padding: EdgeInsets.zero,
+                                  eyeStyle: const QrEyeStyle(
+                                    eyeShape: QrEyeShape.square,
+                                    color: Colors.black,
+                                  ),
+                                  dataModuleStyle: const QrDataModuleStyle(
+                                    dataModuleShape: QrDataModuleShape.circle,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                Container(
+                                  width: 62,
+                                  height: 62,
                                   decoration: BoxDecoration(
                                     color: Colors.black,
                                     shape: BoxShape.circle,
                                     border: Border.all(color: Colors.white, width: 3.5),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.12),
+                                        color: Colors.black.withOpacity(0.16),
                                         blurRadius: 6,
                                       ),
                                     ],
@@ -304,11 +320,11 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
                                     errorBuilder: (_, __, ___) => const Icon(
                                       Icons.door_sliding_rounded,
                                       color: Colors.white,
-                                      size: 30,
+                                      size: 28,
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -571,10 +587,16 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
 
       final chatProv = context.read<ChatProvider>();
 
+      final numericId = (username.startsWith('id') && username.length > 2)
+          ? int.tryParse(username.substring(2))
+          : int.tryParse(username);
+
       // 2. Check local loaded chats
       final localMatch = chatProv.chats.where((c) {
         final u = (c.username ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
-        return u == username.toLowerCase();
+        if (u.isNotEmpty && u == username.toLowerCase()) return true;
+        if (numericId != null && (c.participantId == numericId || c.id == numericId)) return true;
+        return false;
       }).firstOrNull;
 
       if (localMatch != null && mounted) {
