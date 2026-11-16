@@ -30,6 +30,7 @@ class ChatProvider with ChangeNotifier {
   final Map<int, Message?> _pinnedMessages = {};
   // Realtime message reactions: {messageId: List<MessageReaction>}
   final Map<int, List<MessageReaction>> _reactionsByMessage = {};
+  final Set<int> _pendingReactionToggles = {};
 
   StreamSubscription? _wsSubscription;
 
@@ -486,20 +487,37 @@ class ChatProvider with ChangeNotifier {
     required String userName,
     required String userAvatar,
   }) async {
-    final existingList = List<MessageReaction>.from(_reactionsByMessage[messageId] ?? []);
-    final existingIndex = existingList.indexWhere((r) => r.userId == userId);
+    if (_pendingReactionToggles.contains(messageId)) return;
+    _pendingReactionToggles.add(messageId);
 
-    bool isRemoved = false;
-    if (existingIndex != -1) {
-      if (existingList[existingIndex].emoji == emoji) {
-        // Та же реакция — снимаем её (toggle off)
-        existingList.removeAt(existingIndex);
-        isRemoved = true;
-        await DatabaseHelper.instance.removeReaction(messageId, userId);
+    try {
+      // 1. Оптимистичное обновление UI
+      final existingList = List<MessageReaction>.from(_reactionsByMessage[messageId] ?? []);
+      final existingIndex = existingList.indexWhere((r) => r.userId == userId);
+
+      if (existingIndex != -1) {
+        if (existingList[existingIndex].emoji == emoji) {
+          // Та же реакция — снимаем её (toggle off)
+          existingList.removeAt(existingIndex);
+          await DatabaseHelper.instance.removeReaction(messageId, userId);
+        } else {
+          // Другая реакция — заменяем
+          final updated = MessageReaction(
+            id: existingList[existingIndex].id,
+            messageId: messageId,
+            chatId: chatId,
+            userId: userId,
+            emoji: emoji,
+            userName: userName,
+            userAvatar: userAvatar,
+            createdAt: DateTime.now().toIso8601String(),
+          );
+          existingList[existingIndex] = updated;
+          await DatabaseHelper.instance.saveReaction(updated);
+        }
       } else {
-        // Другая реакция — заменяем
-        final updated = MessageReaction(
-          id: existingList[existingIndex].id,
+        // Новая реакция — добавляем
+        final created = MessageReaction(
           messageId: messageId,
           chatId: chatId,
           userId: userId,
@@ -508,39 +526,27 @@ class ChatProvider with ChangeNotifier {
           userAvatar: userAvatar,
           createdAt: DateTime.now().toIso8601String(),
         );
-        existingList[existingIndex] = updated;
-        await DatabaseHelper.instance.saveReaction(updated);
+        existingList.add(created);
+        await DatabaseHelper.instance.saveReaction(created);
       }
-    } else {
-      // Новая реакция — добавляем
-      final created = MessageReaction(
-        messageId: messageId,
-        chatId: chatId,
-        userId: userId,
-        emoji: emoji,
-        userName: userName,
-        userAvatar: userAvatar,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-      existingList.add(created);
-      await DatabaseHelper.instance.saveReaction(created);
-    }
 
-    _reactionsByMessage[messageId] = existingList;
-    notifyListeners();
+      _reactionsByMessage[messageId] = existingList;
+      notifyListeners();
 
-    // 2. Отправка через WebSocket на сервер (WS event: toggle_reaction)
-    WebSocketService.instance.sendReaction(chatId, messageId, emoji);
-
-    // 3. Отправка через REST API на сервер (POST /api/messages/:id/reactions)
-    try {
+      // 2. Отправка строго один раз через REST API
+      // Бэкенд в server.js выполняет toggleMessageReaction и сам рассылает
+      // WebSocket-событие message_reaction_updated всем участникам чата!
       final serverReactions = await ApiService.instance.toggleReaction(messageId, emoji);
       if (serverReactions != null) {
         _reactionsByMessage[messageId] = serverReactions;
         await DatabaseHelper.instance.replaceReactionsForMessage(messageId, serverReactions);
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('toggleReaction error: $e');
+    } finally {
+      _pendingReactionToggles.remove(messageId);
+    }
   }
 
   Future<void> editMessage(int chatId, int messageId, String newText) async {
