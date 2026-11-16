@@ -44,8 +44,33 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
         throw Exception('Не удалось захватить изображение');
       }
 
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final cardImage = await boundary.toImage(pixelRatio: 3.0);
+
+      // Compositing onto full dark background poster for gallery
+      const posterW = 1080.0;
+      const posterH = 1440.0;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, posterW, posterH));
+
+      final bgPaint = Paint()
+        ..shader = ui.Gradient.radial(
+          const Offset(posterW / 2, posterH * 0.45),
+          posterW * 0.85,
+          const [
+            Color(0xFF282828),
+            Color(0xFF141414),
+            Color(0xFF070707),
+          ],
+        );
+      canvas.drawRect(const Rect.fromLTWH(0, 0, posterW, posterH), bgPaint);
+
+      final cardDx = (posterW - cardImage.width) / 2.0;
+      final cardDy = (posterH - cardImage.height) / 2.0;
+      canvas.drawImage(cardImage, Offset(cardDx, cardDy), Paint());
+
+      final finalPicture = recorder.endRecording();
+      final finalImage = await finalPicture.toImage(posterW.toInt(), posterH.toInt());
+      final byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
         throw Exception('Ошибка конвертации изображения');
       }
@@ -224,30 +249,17 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
 
               const Spacer(flex: 2),
 
-              // 2. CENTER: POSTER (WHITE ROUNDED SQUIRCLE CARD ON DARK GRADIENT BACKGROUND)
+              // 2. CENTER: WHITE ROUNDED SQUIRCLE CARD
               Center(
                 child: RepaintBoundary(
                   key: _qrPosterKey,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-                    decoration: const BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment(0.0, -0.15),
-                        radius: 1.15,
-                        colors: [
-                          Color(0xFF282828),
-                          Color(0xFF141414),
-                          Color(0xFF070707),
-                        ],
-                      ),
-                    ),
-                    child: Container(
-                      width: 295,
-                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(34),
-                        boxShadow: [
+                    width: 295,
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(34),
+                      boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.45),
                             blurRadius: 36,
@@ -315,7 +327,6 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
                     ),
                   ),
                 ),
-              ),
 
               const Spacer(flex: 3),
 
