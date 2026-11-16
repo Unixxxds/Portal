@@ -13,7 +13,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../../core/qr_matrix.dart';
 import '../../models/chat.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -390,107 +389,6 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
       ),
     );
   }
-}
-
-// =============================================================================
-// CUSTOM QR PAINTER (Rounded squircle modules, rounded finder eyes)
-// =============================================================================
-class PortalQrPainter extends CustomPainter {
-  final String data;
-  late final QrCode _qr;
-
-  PortalQrPainter({required this.data}) {
-    _qr = QrCode.encodeText(data, ecLevel: 0); // EC Level M
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final moduleCount = _qr.moduleCount;
-    final moduleSize = size.width / moduleCount;
-    final paint = Paint()
-      ..color = Colors.black
-      ..isAntiAlias = true
-      ..style = PaintingStyle.fill;
-
-    final centerModule = moduleCount / 2.0;
-    const centerCutoutRadiusModules = 4.3; // Clear central circle for Portal logo
-
-    for (int r = 0; r < moduleCount; r++) {
-      for (int c = 0; c < moduleCount; c++) {
-        // Skip modules inside central logo circle
-        final distFromCenter = sqrt(pow(r + 0.5 - centerModule, 2) + pow(c + 0.5 - centerModule, 2));
-        if (distFromCenter < centerCutoutRadiusModules) {
-          continue;
-        }
-
-        // Check if inside finder patterns (top-left, top-right, bottom-left)
-        final isTopLeft = (r < 7 && c < 7);
-        final isTopRight = (r < 7 && c >= moduleCount - 7);
-        final isBottomLeft = (r >= moduleCount - 7 && c < 7);
-
-        if (isTopLeft || isTopRight || isBottomLeft) {
-          // Handled separately with smooth rounded finder corners below
-          continue;
-        }
-
-        if (_qr.isDark(r, c)) {
-          final rect = Rect.fromLTWH(
-            c * moduleSize,
-            r * moduleSize,
-            moduleSize,
-            moduleSize,
-          );
-          final rrect = RRect.fromRectAndRadius(
-            rect.deflate(moduleSize * 0.08),
-            Radius.circular(moduleSize * 0.35),
-          );
-          canvas.drawRRect(rrect, paint);
-        }
-      }
-    }
-
-    // Draw stylish rounded finder patterns in the 3 corners
-    _drawFinderPattern(canvas, 0, 0, moduleSize, paint);
-    _drawFinderPattern(canvas, moduleCount - 7, 0, moduleSize, paint);
-    _drawFinderPattern(canvas, 0, moduleCount - 7, moduleSize, paint);
-  }
-
-  void _drawFinderPattern(Canvas canvas, int row, int col, double moduleSize, Paint paint) {
-    final outerRect = Rect.fromLTWH(
-      col * moduleSize,
-      row * moduleSize,
-      7 * moduleSize,
-      7 * moduleSize,
-    );
-
-    // Outer rounded stroke
-    final strokePaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = moduleSize
-      ..isAntiAlias = true;
-
-    final outerStrokeRect = outerRect.deflate(moduleSize * 0.5);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(outerStrokeRect, Radius.circular(moduleSize * 1.6)),
-      strokePaint,
-    );
-
-    // Inner solid rounded core
-    final innerRect = Rect.fromLTWH(
-      (col + 2) * moduleSize,
-      (row + 2) * moduleSize,
-      3 * moduleSize,
-      3 * moduleSize,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(innerRect, Radius.circular(moduleSize * 0.8)),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant PortalQrPainter oldDelegate) => oldDelegate.data != data;
 }
 
 // =============================================================================
