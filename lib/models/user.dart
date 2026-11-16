@@ -119,8 +119,20 @@ class User {
   }
 
   factory User.fromMap(Map<String, dynamic> map) {
+    final rawId = map['id'];
+    final parsedId = rawId is int ? rawId : (int.tryParse(rawId?.toString() ?? '0') ?? 0);
+
+    final rawSparks = map['sparks'];
+    final parsedSparks = rawSparks is int ? rawSparks : (int.tryParse(rawSparks?.toString() ?? '250') ?? 250);
+
+    final rawPremium = map['is_premium'];
+    final isPrem = rawPremium == 1 || rawPremium == true || rawPremium == '1';
+
+    final rawOnline = map['is_online'];
+    final isOnlineVal = rawOnline == 1 || rawOnline == true || rawOnline == '1';
+
     return User(
-      id: map['id'] as int,
+      id: parsedId,
       firstName: map['first_name']?.toString() ?? '',
       lastName: map['last_name']?.toString() ?? '',
       username: map['username']?.toString() ?? '',
@@ -129,10 +141,10 @@ class User {
       description: map['description']?.toString(),
       phone: map['phone']?.toString(),
       email: map['email']?.toString(),
-      sparks: map['sparks'] as int? ?? 250,
-      isPremium: (map['is_premium'] as int? ?? 0) == 1,
+      sparks: parsedSparks,
+      isPremium: isPrem,
       verification: map['verification']?.toString() ?? 'none',
-      isOnline: (map['is_online'] as int? ?? 0) == 1,
+      isOnline: isOnlineVal,
       lastSeen: map['last_seen']?.toString(),
       secondaryUsernames: (map['secondary_usernames'] is String && (map['secondary_usernames'] as String).isNotEmpty)
           ? (map['secondary_usernames'] as String)

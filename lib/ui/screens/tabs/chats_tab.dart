@@ -10,6 +10,7 @@ import '../../../core/user_activity_helper.dart';
 import '../../theme.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
+import '../../widgets/telegram_chat_route.dart';
 import '../../widgets/telegram_typing_indicator.dart';
 import '../chat_screen.dart';
 import '../create_channel_screen.dart';
@@ -155,7 +156,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       if (context.mounted) {
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (context) => ChatScreen(chat: channelChat)),
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: channelChat)),
         );
       }
       return;
@@ -173,6 +174,29 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final avatar = (item['avatar'] ?? '').toString();
     final isOnline = item['is_online'] == 1 || item['is_online'] == true;
     final lastSeen = item['last_seen']?.toString();
+
+    // 0. Защита от дубликата самого себя: клик на самого себя открывает «Избранное»
+    if (currentUserId > 0 && targetUserId == currentUserId) {
+      Chat? savedChat = chatProvider.chats.where((c) => c.isSaved).firstOrNull;
+      savedChat ??= Chat(
+        id: currentUserId,
+        title: 'Избранное',
+        type: 'saved',
+        avatar: '',
+        participantId: currentUserId,
+      );
+      if (context.mounted) {
+        context.read<ChatProvider>().preloadChat(
+          savedChat.id,
+          participantId: savedChat.participantId,
+        );
+        Navigator.push(
+          context,
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: savedChat!)),
+        );
+      }
+      return;
+    }
 
     // 1. Ищем существующий диалог
     Chat? existing;
@@ -201,7 +225,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         );
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (context) => ChatScreen(chat: existing!)),
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: existing!)),
         );
       }
       return;
@@ -236,7 +260,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         );
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (context) => ChatScreen(chat: directChat)),
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: directChat)),
         );
       }
     } catch (_) {
@@ -259,7 +283,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         );
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (context) => ChatScreen(chat: directChat)),
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: directChat)),
         );
       }
     }
@@ -398,7 +422,17 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                             color: Color(0xFF3B98FF),
                           ),
                         ),
-                      if (isChannel && subCount > 0) ...[
+                      if (!isChannel && currentUserId > 0 && item['id'] == currentUserId) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          '• это вы (Избранное)',
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 12.5,
+                            color: Color(0xFF34C759),
+                          ),
+                        ),
+                      ] else if (isChannel && subCount > 0) ...[
                         const SizedBox(width: 6),
                         Text(
                           '• ${UserActivityHelper.formatSubscribers(subCount)}',
@@ -829,7 +863,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
               );
               Navigator.push(
                 context,
-                CupertinoPageRoute(
+                TelegramChatRoute(
                   builder: (context) => ChatScreen(chat: chat),
                 ),
               );

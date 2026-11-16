@@ -61,9 +61,7 @@ class Chat {
       }
     }
     final u = username?.toLowerCase().trim();
-    final t = title.toLowerCase().trim();
-    if (u == 'portal' ||
-        (isChannel && (t == 'portal' || t.contains('portal')))) {
+    if (u == 'portal') {
       return 'verified';
     }
     if (u == 'revs') return 'dev';
@@ -84,9 +82,10 @@ class Chat {
   bool get isSaved =>
       type == 'saved' ||
       title.toLowerCase().contains('избранное') ||
-      title.toLowerCase().contains('сохранен');
+      title.toLowerCase().contains('сохранен') ||
+      title.toLowerCase() == 'saved messages';
   bool get isDirect =>
-      type == 'direct' || type == 'dialog' || type == 'private' || !isChannel;
+      !isChannel && !isSaved && (type == 'direct' || type == 'dialog' || type == 'private');
 
   String get displayLastMessage {
     final text = lastMessageText.trim();
@@ -235,10 +234,14 @@ class Chat {
                     .toList()
                 : const <String>[];
 
-    final rawVerif = json['verification']?.toString() ??
-        json['channel_verification']?.toString() ??
-        json['sender_verification']?.toString() ??
-        json['user_verification']?.toString();
+    final isChan = json['is_channel'] == 1 || json['is_channel'] == true;
+
+    final rawVerif = isChan
+        ? (json['verification']?.toString() ?? json['channel_verification']?.toString())
+        : (json['verification']?.toString() ??
+            json['channel_verification']?.toString() ??
+            json['sender_verification']?.toString() ??
+            json['user_verification']?.toString());
     final cleanVerif =
         (rawVerif != null && rawVerif.isNotEmpty && rawVerif != 'none')
             ? rawVerif
@@ -248,8 +251,6 @@ class Chat {
         (json['first_name'] != null
             ? '${json['first_name']} ${json['last_name'] ?? ''}'.trim()
             : (json['name']?.toString() ?? 'Чат'));
-
-    final isChan = json['is_channel'] == 1 || json['is_channel'] == true;
 
     return Chat(
       id: json['id'] is int

@@ -141,7 +141,7 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> switchAccountData() async {
+  Future<void> switchAccountData({Function(User)? onUserLoaded}) async {
     _chats.clear();
     _messagesByChat.clear();
     _activeChatId = null;
@@ -154,7 +154,7 @@ class ChatProvider with ChangeNotifier {
     // 1. Синхронизируем бутстрап с сервера для целевого аккаунта.
     // Бутстрап очистит из локальной БД чужие чаты и сохранит актуальные закрепы
     try {
-      await syncBootstrap();
+      await syncBootstrap(onUserLoaded: onUserLoaded);
     } catch (e) {
       debugPrint('Sync bootstrap error during account switch: $e');
     }
@@ -642,15 +642,7 @@ class ChatProvider with ChangeNotifier {
       final res = await ApiService.instance.sendMessage(chatId, text.trim(), replyToMessageId: replyToMessageId);
       if (res['success'] == true && res['message'] != null) {
         final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
-        
-        // Заменяем временное сообщение реальным
-        final list = _messagesByChat[chatId];
-        if (list != null) {
-          final idx = list.indexWhere((m) => m.id == tempId);
-          if (idx != -1) {
-            list[idx] = serverMsg;
-          }
-        }
+        _reconcileServerMessage(chatId, tempId, serverMsg);
         await DatabaseHelper.instance.insertMessage(serverMsg);
       }
     } catch (e) {
@@ -666,6 +658,52 @@ class ChatProvider with ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  void _deduplicateMessages(List<Message> list) {
+    final seenIds = <int>{};
+    list.removeWhere((m) {
+      if (m.id > 0) {
+        if (seenIds.contains(m.id)) {
+          return true;
+        }
+        seenIds.add(m.id);
+      }
+      return false;
+    });
+  }
+
+  void _reconcileServerMessage(int chatId, int tempId, Message serverMsg) {
+    final list = _messagesByChat[chatId];
+    if (list != null) {
+      final alreadyPresent = list.any((m) => m.id == serverMsg.id);
+      if (alreadyPresent) {
+        list.removeWhere((m) => m.id == tempId);
+      } else {
+        final idx = list.indexWhere((m) => m.id == tempId);
+        if (idx != -1) {
+          list[idx] = serverMsg;
+        } else {
+          list.add(serverMsg);
+        }
+      }
+      _deduplicateMessages(list);
+    }
+    if (_activeChatParticipantId != null && _activeChatParticipantId != chatId) {
+      final pList = _messagesByChat[_activeChatParticipantId!];
+      if (pList != null) {
+        final alreadyPresent = pList.any((m) => m.id == serverMsg.id);
+        if (alreadyPresent) {
+          pList.removeWhere((m) => m.id == tempId);
+        } else {
+          final idx = pList.indexWhere((m) => m.id == tempId);
+          if (idx != -1) {
+            pList[idx] = serverMsg;
+          }
+        }
+        _deduplicateMessages(pList);
+      }
+    }
   }
 
   void cancelPendingMessage(int chatId, int messageId) {
@@ -689,12 +727,11 @@ class ChatProvider with ChangeNotifier {
     final nowIso = DateTime.now().toIso8601String();
 
     final localPaths = files.map((f) => f.path).toList();
-    final optimisticPayload = '[PORTAL_PHOTO]:' +
-        jsonEncode({
-          'url': localPaths.first,
-          'urls': localPaths,
-          'caption': caption,
-        });
+    final optimisticPayload = '[PORTAL_PHOTO]:${jsonEncode({
+      'url': localPaths.first,
+      'urls': localPaths,
+      'caption': caption,
+    })}';
 
     final optimisticMsg = Message(
       id: tempId,
@@ -725,12 +762,11 @@ class ChatProvider with ChangeNotifier {
 
       if (uploadedUrls.isEmpty) throw Exception('Не удалось загрузить фотографии');
 
-      final serverPayload = '[PORTAL_PHOTO]:' +
-          jsonEncode({
-            'url': uploadedUrls.first,
-            'urls': uploadedUrls,
-            'caption': caption,
-          });
+      final serverPayload = '[PORTAL_PHOTO]:${jsonEncode({
+        'url': uploadedUrls.first,
+        'urls': uploadedUrls,
+        'caption': caption,
+      })}';
 
       final res = await ApiService.instance.sendMessage(
         chatId,
@@ -740,13 +776,7 @@ class ChatProvider with ChangeNotifier {
 
       if (res['success'] == true && res['message'] != null) {
         final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
-        final list = _messagesByChat[chatId];
-        if (list != null) {
-          final idx = list.indexWhere((m) => m.id == tempId);
-          if (idx != -1) {
-            list[idx] = serverMsg;
-          }
-        }
+        _reconcileServerMessage(chatId, tempId, serverMsg);
         await DatabaseHelper.instance.insertMessage(serverMsg);
       }
     } catch (e) {
@@ -773,12 +803,11 @@ class ChatProvider with ChangeNotifier {
     final tempId = -DateTime.now().millisecondsSinceEpoch;
     final nowIso = DateTime.now().toIso8601String();
 
-    final optimisticPayload = '[PORTAL_VOICE]:' +
-        jsonEncode({
-          'url': voiceFile.path,
-          'localPath': voiceFile.path,
-          'duration': durationSec,
-        });
+    final optimisticPayload = '[PORTAL_VOICE]:${jsonEncode({
+      'url': voiceFile.path,
+      'localPath': voiceFile.path,
+      'duration': durationSec,
+    })}';
 
     final optimisticMsg = Message(
       id: tempId,
@@ -800,11 +829,10 @@ class ChatProvider with ChangeNotifier {
 
     try {
       final uploadedUrl = await ApiService.instance.uploadVoice(voiceFile);
-      final serverPayload = '[PORTAL_VOICE]:' +
-          jsonEncode({
-            'url': uploadedUrl,
-            'duration': durationSec,
-          });
+      final serverPayload = '[PORTAL_VOICE]:${jsonEncode({
+        'url': uploadedUrl,
+        'duration': durationSec,
+      })}';
 
       final res = await ApiService.instance.sendMessage(
         chatId,
@@ -814,13 +842,7 @@ class ChatProvider with ChangeNotifier {
 
       if (res['success'] == true && res['message'] != null) {
         final serverMsg = Message.fromJson(res['message'] as Map<String, dynamic>, fallbackChatId: chatId);
-        final list = _messagesByChat[chatId];
-        if (list != null) {
-          final idx = list.indexWhere((m) => m.id == tempId);
-          if (idx != -1) {
-            list[idx] = serverMsg;
-          }
-        }
+        _reconcileServerMessage(chatId, tempId, serverMsg);
         await DatabaseHelper.instance.insertMessage(serverMsg);
       }
     } catch (e) {
@@ -838,14 +860,39 @@ class ChatProvider with ChangeNotifier {
   }
 
   Future<void> addOrUpdateChat(Chat chat) async {
-    final idx = _chats.indexWhere((c) => c.isChannel == chat.isChannel && c.id == chat.id);
+    final currentUserId = await SecureStorageService.instance.getCurrentUserId() ?? 0;
+    Chat normalized = chat;
+
+    final isSelfChat = !chat.isChannel && (
+      chat.isSaved ||
+      (currentUserId > 0 && (chat.participantId == currentUserId || chat.id == currentUserId))
+    );
+
+    if (isSelfChat) {
+      normalized = chat.copyWith(
+        title: 'Избранное',
+        type: 'saved',
+        avatar: '',
+      );
+      // Если Избранное уже есть в списке, заменяем его
+      final savedIdx = _chats.indexWhere((c) => c.isSaved);
+      if (savedIdx != -1) {
+        _chats[savedIdx] = normalized;
+        _sortChats();
+        await DatabaseHelper.instance.insertChat(normalized);
+        notifyListeners();
+        return;
+      }
+    }
+
+    final idx = _chats.indexWhere((c) => c.isChannel == normalized.isChannel && c.id == normalized.id);
     if (idx != -1) {
-      _chats[idx] = chat;
+      _chats[idx] = normalized;
     } else {
-      _chats.insert(0, chat);
+      _chats.insert(0, normalized);
     }
     _sortChats();
-    await DatabaseHelper.instance.insertChat(chat);
+    await DatabaseHelper.instance.insertChat(normalized);
     notifyListeners();
   }
 
@@ -1004,8 +1051,31 @@ class ChatProvider with ChangeNotifier {
           if (isChatActive) {
             final activeKey = _activeChatId ?? msg.chatId;
             final list = _messagesByChat[activeKey] ?? [];
+
+            // 1. Проверяем: сообщение уже есть в списке по id?
             if (!list.any((m) => m.id == msg.id)) {
-              list.add(msg);
+              // 2. Если это наше исходящее сообщение, ищем локальное optimistic pending-сообщение
+              if (isFromMe) {
+                final pendingIdx = list.indexWhere((m) =>
+                    m.isPending &&
+                    (m.id < 0) &&
+                    (m.text.trim() == msg.text.trim() ||
+                        (m.text.contains('[PORTAL_STICKER]') && msg.text.contains('[PORTAL_STICKER]')) ||
+                        (m.text.contains('[PORTAL_PHOTO]') && msg.text.contains('[PORTAL_PHOTO]')) ||
+                        (m.text.contains('[PORTAL_VOICE]') && msg.text.contains('[PORTAL_VOICE]'))));
+
+                if (pendingIdx != -1) {
+                  // WebSocket доставил сообщение раньше REST — заменяем pending на подтвержденное
+                  list[pendingIdx] = msg;
+                } else {
+                  list.add(msg);
+                }
+              } else {
+                list.add(msg);
+              }
+
+              _deduplicateMessages(list);
+
               _messagesByChat[activeKey] = list;
               if (_activeChatParticipantId != null) {
                 _messagesByChat[_activeChatParticipantId!] = list;

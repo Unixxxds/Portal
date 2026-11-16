@@ -16,13 +16,15 @@ class DatabaseHelper {
 
   DatabaseHelper._init();
 
-  static void setActiveUserId(int? userId) {
+  static Future<void> setActiveUserId(int? userId) async {
     if (_activeUserId != userId) {
       _activeUserId = userId;
-      try {
-        _database?.close();
-      } catch (_) {}
-      _database = null;
+      if (_database != null) {
+        try {
+          await _database!.close();
+        } catch (_) {}
+        _database = null;
+      }
     }
   }
 
@@ -457,6 +459,32 @@ class DatabaseHelper {
     } catch (_) {}
   }
 
+  // Обновление основных реквизитов чата/канала
+  Future<void> updateChatDetails({
+    required int chatId,
+    String? title,
+    String? username,
+    String? description,
+    String? avatar,
+  }) async {
+    try {
+      final db = await instance.database;
+      final values = <String, dynamic>{
+        if (title != null) 'title': title,
+        if (username != null) 'username': username,
+        if (description != null) 'description': description,
+        if (avatar != null) 'avatar': avatar,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      await db.update(
+        'chats',
+        values,
+        where: 'id = ?',
+        whereArgs: [chatId],
+      );
+    } catch (_) {}
+  }
+
   // Обновление баланса Sparks пользователя в локальной БД
   Future<void> updateUserSparks(int userId, int sparks) async {
     try {
@@ -481,13 +509,20 @@ class DatabaseHelper {
     int? activeChatId,
   }) async {
     final db = await instance.database;
+    final activeUserId = (user['id'] is int
+            ? user['id'] as int
+            : int.tryParse(user['id']?.toString() ?? '')) ??
+        _activeUserId ??
+        await SecureStorageService.instance.getCurrentUserId() ??
+        0;
+
     await db.transaction((txn) async {
       // 1. Сохраняем профиль
       if (user.isNotEmpty) {
         await txn.insert(
           'users',
           {
-            'id': user['id'] is int ? user['id'] : int.tryParse(user['id'].toString()) ?? 0,
+            'id': activeUserId,
             'first_name': user['first_name']?.toString() ?? '',
             'last_name': user['last_name']?.toString() ?? '',
             'username': user['username']?.toString() ?? '',
@@ -603,25 +638,39 @@ class DatabaseHelper {
             ? c['owner_id'] as int
             : int.tryParse(c['owner_id']?.toString() ?? '');
 
-        final rawVerif = c['verification']?.toString() ??
-            c['channel_verification']?.toString() ??
-            c['sender_verification']?.toString();
-        final title = c['title']?.toString() ?? c['first_name']?.toString() ?? 'Чат';
+        final rawVerif = isChan
+            ? (c['verification']?.toString() ?? c['channel_verification']?.toString())
+            : (c['verification']?.toString() ??
+                c['channel_verification']?.toString() ??
+                c['sender_verification']?.toString());
+        final rawTitle = c['title']?.toString() ?? c['first_name']?.toString() ?? 'Чат';
         final uname = c['username']?.toString() ?? '';
 
         final effectiveV = (rawVerif != null && rawVerif.isNotEmpty && rawVerif != 'none')
             ? rawVerif
             : (uname.toLowerCase() == 'revs' ? 'dev' :
-               ((uname.toLowerCase() == 'portal' || (isChan && title.toLowerCase().contains('portal'))) ? 'verified' :
+               (uname.toLowerCase() == 'portal' ? 'verified' :
                 (uname.toLowerCase() == 'botfather' ? 'verified' : 'none')));
+
+        final isSavedChat = !isChan && (
+          c['type'] == 'saved' ||
+          (activeUserId > 0 && (pId == activeUserId || cId == activeUserId)) ||
+          rawTitle.toLowerCase().contains('избранное') ||
+          rawTitle.toLowerCase().contains('сохранен') ||
+          rawTitle.toLowerCase() == 'saved messages'
+        );
+
+        final title = isSavedChat ? 'Избранное' : rawTitle;
+        final chatType = isChan ? 'channel' : (isSavedChat ? 'saved' : (c['type']?.toString() ?? 'direct'));
+        final chatAvatar = isSavedChat ? '' : (c['avatar']?.toString() ?? '');
 
         batch.insert(
           'chats',
           {
             'id': cId,
             'title': title,
-            'type': isChan ? 'channel' : 'direct',
-            'avatar': c['avatar']?.toString() ?? '',
+            'type': chatType,
+            'avatar': chatAvatar,
             'last_message_text': lastText,
             'last_message_time': lastTime,
             'unread_count': finalUnread,
@@ -629,14 +678,14 @@ class DatabaseHelper {
             'is_channel': isChan ? 1 : 0,
             'is_online': (c['is_online'] == true || c['is_online'] == 1) ? 1 : 0,
             'last_seen': c['last_seen']?.toString() ?? '',
-            'participant_id': pId,
+            'participant_id': isSavedChat ? activeUserId : pId,
             'owner_id': oId,
-            'banner_url': c['banner_url']?.toString() ?? c['banner']?.toString() ?? '',
+            'banner_url': isSavedChat ? '' : (c['banner_url']?.toString() ?? c['banner']?.toString() ?? ''),
             'description': c['description']?.toString() ?? c['about']?.toString() ?? '',
-            'phone': c['phone']?.toString() ?? '',
-            'username': uname,
-            'verification': effectiveV,
-            'is_premium': (c['is_premium'] == true || c['is_premium'] == 1 || c['isPremium'] == true) ? 1 : 0,
+            'phone': isSavedChat ? '' : (c['phone']?.toString() ?? ''),
+            'username': isSavedChat ? '' : uname,
+            'verification': isSavedChat ? 'none' : effectiveV,
+            'is_premium': isSavedChat ? 0 : ((c['is_premium'] == true || c['is_premium'] == 1 || c['isPremium'] == true) ? 1 : 0),
             'updated_at': DateTime.now().toIso8601String(),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -719,7 +768,39 @@ class DatabaseHelper {
       'chats',
       orderBy: 'is_pinned DESC, last_message_time DESC, id DESC',
     );
-    final chats = result.map((m) => Chat.fromMap(m)).toList();
+    final rawChats = result.map((m) => Chat.fromMap(m)).toList();
+    final currentUserId = _activeUserId ?? await SecureStorageService.instance.getCurrentUserId() ?? 0;
+
+    // Нормализация и дедупликация чата «Избранное»
+    final List<Chat> chats = [];
+    Chat? primarySavedChat;
+
+    for (final c in rawChats) {
+      final isSelfChat = !c.isChannel && (
+        c.isSaved ||
+        (currentUserId > 0 && (c.participantId == currentUserId || c.id == currentUserId))
+      );
+
+      if (isSelfChat) {
+        final normalized = c.copyWith(
+          title: 'Избранное',
+          type: 'saved',
+          avatar: '',
+        );
+        if (primarySavedChat == null) {
+          primarySavedChat = normalized;
+          chats.add(normalized);
+        } else {
+          // Если в локальной БД образовался дубликат чата «Избранное», удаляем лишний
+          try {
+            await db.delete('chats', where: 'id = ?', whereArgs: [c.id]);
+          } catch (_) {}
+        }
+      } else {
+        chats.add(c);
+      }
+    }
+
     for (int i = 0; i < chats.length; i++) {
       if (chats[i].lastMessageTime.isEmpty) {
         final c = chats[i];

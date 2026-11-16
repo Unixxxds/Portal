@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/badges.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -48,11 +50,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  /// Opens native Windows file dialog to choose an image from PC
-  Future<String?> _pickImageFromPC({
+  /// Chooses an image from device gallery (mobile) or native file dialog (PC)
+  Future<String?> _pickImage({
     required String title,
-    String filter = 'Изображения и анимации (*.gif;*.webp;*.png;*.jpg;*.jpeg)|*.gif;*.webp;*.png;*.jpg;*.jpeg|Анимированные GIF (*.gif)|*.gif|Анимированные WebP (*.webp)|*.webp|Все файлы (*.*)|*.*',
+    ImageSource source = ImageSource.gallery,
+    bool pickMedia = false,
+    String filter = 'Изображения и анимации (*.gif;*.webp;*.png;*.jpg;*.jpeg;*.mp4;*.mov)|*.gif;*.webp;*.png;*.jpg;*.jpeg;*.mp4;*.mov|Анимированные GIF (*.gif)|*.gif|Анимированные WebP (*.webp)|*.webp|Все файлы (*.*)|*.*',
   }) async {
+    // 1. Mobile platforms (Android / iOS)
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final picker = ImagePicker();
+        XFile? picked;
+        if (pickMedia) {
+          try {
+            picked = await picker.pickMedia();
+          } catch (_) {
+            picked = await picker.pickImage(source: source, imageQuality: 95);
+          }
+        } else {
+          picked = await picker.pickImage(source: source, imageQuality: 92);
+        }
+        if (picked != null && picked.path.isNotEmpty) {
+          final file = File(picked.path);
+          if (await file.exists()) {
+            return picked.path;
+          }
+        }
+      } catch (e) {
+        debugPrint('Mobile image picker error: $e');
+      }
+      return null;
+    }
+
+    // 2. Windows PC
     if (Platform.isWindows) {
       try {
         final script = r"""
@@ -70,14 +101,29 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
           return path;
         }
       } catch (e) {
-        debugPrint('File picker error: $e');
+        debugPrint('Windows file picker error: $e');
       }
+      return null;
+    }
+
+    // 3. Fallback
+    try {
+      final picker = ImagePicker();
+      final picked = pickMedia ? await picker.pickMedia() : await picker.pickImage(source: source);
+      if (picked != null && picked.path.isNotEmpty) {
+        return picked.path;
+      }
+    } catch (e) {
+      debugPrint('Fallback image picker error: $e');
     }
     return null;
   }
 
-  Future<void> _uploadAvatarFromPC() async {
-    final filePath = await _pickImageFromPC(title: 'Выберите аватарку');
+  Future<void> _uploadAvatar({ImageSource source = ImageSource.gallery}) async {
+    final filePath = await _pickImage(
+      title: 'Выберите аватарку',
+      source: source,
+    );
     if (filePath == null) return;
 
     setState(() => _isUploadingAvatar = true);
@@ -90,7 +136,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Аватарка успешно загружена', style: TextStyle(color: Colors.white)),
+            content: const Text('Аватарка успешно обновлена', style: TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFF191919),
             duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
@@ -114,10 +160,21 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     }
   }
 
-  Future<void> _uploadBannerFromPC() async {
-    final filePath = await _pickImageFromPC(
-      title: 'Выберите баннер профиля (поддерживаются анимированные GIF, WebP)',
-      filter: 'Баннеры и анимации (*.gif;*.webp;*.png;*.jpg;*.jpeg)|*.gif;*.webp;*.png;*.jpg;*.jpeg|Анимированные GIF (*.gif)|*.gif|Анимированные WebP (*.webp)|*.webp|Все файлы (*.*)|*.*',
+  Future<void> _uploadBanner({
+    ImageSource source = ImageSource.gallery,
+    bool pickMedia = false,
+  }) async {
+    final isPremium = context.read<AuthProvider>().currentUser?.isPremium ?? false;
+    if (!isPremium) {
+      _showPremiumBannerRequiredDialog();
+      return;
+    }
+
+    final filePath = await _pickImage(
+      title: 'Выберите баннер профиля (поддерживаются Live-фото, анимированные GIF, WebP)',
+      source: source,
+      pickMedia: pickMedia,
+      filter: 'Баннеры и анимации (*.gif;*.webp;*.png;*.jpg;*.jpeg;*.mp4;*.mov)|*.gif;*.webp;*.png;*.jpg;*.jpeg;*.mp4;*.mov|Анимированные GIF (*.gif)|*.gif|Анимированные WebP (*.webp)|*.webp|Все файлы (*.*)|*.*',
     );
     if (filePath == null) return;
 
@@ -155,7 +212,95 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     }
   }
 
+  void _showPremiumBannerRequiredDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF191919),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0x40FFFFFF),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B98FF).withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: PremiumBadge(size: 32),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Баннер только с Premium',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontDisplay,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Установка кастомных и анимированных баннеров профиля доступна исключительно с подпиской Portal Premium.',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontText,
+                    fontSize: 14,
+                    color: Color(0xFF929292),
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Container(
+                    width: double.infinity,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3B98FF),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Понятно',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showAvatarOptions() {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF191919),
@@ -188,26 +333,61 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       color: Color(0xFF242424),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.file_upload_outlined, color: Colors.white, size: 20),
+                    child: Icon(
+                      isMobile ? Icons.photo_library_outlined : Icons.file_upload_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
-                  title: const Text(
-                    'Загрузить фото с устройства',
-                    style: TextStyle(
+                  title: Text(
+                    isMobile ? 'Выбрать из галереи' : 'Загрузить фото с устройства',
+                    style: const TextStyle(
                       fontFamily: AppTheme.fontText,
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  subtitle: const Text(
-                    'Открыть проводник файлов и выбрать изображение',
-                    style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                  subtitle: Text(
+                    isMobile ? 'Открыть медиатеку и выбрать снимок' : 'Открыть проводник файлов и выбрать изображение',
+                    style: const TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _uploadAvatarFromPC();
+                    _uploadAvatar(source: ImageSource.gallery);
                   },
                 ),
+                if (isMobile) ...[
+                  const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                  ListTile(
+                    leading: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF242424),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 20),
+                    ),
+                    title: const Text(
+                      'Сделать снимок',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Открыть камеру устройства',
+                      style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _uploadAvatar(source: ImageSource.camera);
+                    },
+                  ),
+                ],
                 const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
                 ListTile(
                   leading: Container(
@@ -274,6 +454,13 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   }
 
   void _showBannerOptions() {
+    final isPremium = context.read<AuthProvider>().currentUser?.isPremium ?? false;
+    if (!isPremium) {
+      _showPremiumBannerRequiredDialog();
+      return;
+    }
+
+    final isMobile = Platform.isAndroid || Platform.isIOS;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF191919),
@@ -306,11 +493,15 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       color: Color(0xFF242424),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.file_upload_outlined, color: Colors.white, size: 20),
+                    child: Icon(
+                      isMobile ? Icons.photo_library_outlined : Icons.file_upload_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
-                  title: const Text(
-                    'Загрузить баннер с устройства',
-                    style: TextStyle(
+                  title: Text(
+                    isMobile ? 'Выбрать баннер из галереи' : 'Загрузить баннер с устройства',
+                    style: const TextStyle(
                       fontFamily: AppTheme.fontText,
                       color: Colors.white,
                       fontSize: 15,
@@ -318,12 +509,47 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                     ),
                   ),
                   subtitle: const Text(
-                    'GIF, WebP, PNG, JPG (поддерживаются анимации)',
+                    'PNG, JPG, статичные изображения',
                     style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _uploadBannerFromPC();
+                    _uploadBanner(source: ImageSource.gallery);
+                  },
+                ),
+                const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                ListTile(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF242424),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.motion_photos_on_rounded, color: Color(0xFF3B98FF), size: 20),
+                  ),
+                  title: const Row(
+                    children: [
+                      Text(
+                        'Live-фото / Анимация',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      PremiumBadge(size: 14),
+                    ],
+                  ),
+                  subtitle: const Text(
+                    'Живое фото, зацикленная анимация GIF или WebP',
+                    style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _uploadBanner(source: ImageSource.gallery, pickMedia: true);
                   },
                 ),
                 const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
@@ -546,6 +772,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
   @override
   Widget build(BuildContext context) {
+    final isPremium = context.watch<AuthProvider>().currentUser?.isPremium ?? false;
     final formattedBanner = AppConstants.formatMediaUrl(_currentBanner);
 
     return Scaffold(
@@ -632,7 +859,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                     height: 190,
                     decoration: BoxDecoration(
                       color: const Color(0xFF191919),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(22),
                       border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                     ),
                     clipBehavior: Clip.antiAlias,
@@ -712,7 +939,9 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                                 color: Colors.black.withOpacity(0.6),
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.2),
+                                  color: isPremium
+                                      ? Colors.white.withOpacity(0.2)
+                                      : const Color(0xFF3B98FF).withOpacity(0.5),
                                   width: 0.8,
                                 ),
                               ),
@@ -725,16 +954,22 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                                       height: 12,
                                       child: CircularProgressIndicator(strokeWidth: 1.6, color: Colors.white),
                                     )
-                                  else
+                                  else if (!isPremium) ...[
+                                    const PremiumBadge(size: 13),
+                                    const SizedBox(width: 5),
+                                  ] else ...[
                                     const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 14),
-                                  const SizedBox(width: 5),
+                                    const SizedBox(width: 5),
+                                  ],
                                   Text(
-                                    _isUploadingBanner ? 'Загрузка...' : 'Загрузить баннер',
-                                    style: const TextStyle(
+                                    _isUploadingBanner
+                                        ? 'Загрузка...'
+                                        : (isPremium ? 'Загрузить баннер' : 'Баннер (Premium)'),
+                                    style: TextStyle(
                                       fontFamily: AppTheme.fontText,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.white,
+                                      color: isPremium ? Colors.white : const Color(0xFF64B5F6),
                                     ),
                                   ),
                                 ],
@@ -825,15 +1060,78 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       ],
                     ),
                   ),
+                  if (!isPremium) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF1E2838).withOpacity(0.9),
+                            const Color(0xFF131A26).withOpacity(0.9),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFF3B98FF).withOpacity(0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B98FF).withOpacity(0.16),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: PremiumBadge(size: 20),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Баннер профиля',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    color: Colors.white,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Кастомный баннер доступен только с подпиской Premium',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    color: Color(0xFF8BA5C8),
+                                    fontSize: 12,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   // ===========================================================
-                  // GROUPED CARD 1: ИМЯ И ФАМИЛИЯ
+                  // GROUPED CARD 1: ИМЯ И ФАМИЛИЯ (1:1 с референсом)
                   // ===========================================================
                   Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFF191919),
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(22),
                       border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                     ),
                     child: Column(
@@ -841,187 +1139,64 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       children: [
                         // First Name
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'ИМЯ',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontDisplay,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF929292),
-                                  letterSpacing: 0.5,
-                                ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          child: TextField(
+                            controller: _firstNameController,
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            decoration: const InputDecoration(
+                              hintText: 'Имя',
+                              hintStyle: TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Color(0xFF6B7280),
+                                fontSize: 16,
                               ),
-                              const SizedBox(height: 4),
-                              TextField(
-                                controller: _firstNameController,
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Ваше имя',
-                                  hintStyle: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    color: Color(0xFF6B7280),
-                                    fontSize: 15,
-                                  ),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ],
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
                           ),
                         ),
                         const Divider(height: 1, color: Color(0x14FFFFFF), indent: 16),
 
                         // Last Name
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'ФАМИЛИЯ (НЕОБЯЗАТЕЛЬНО)',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontDisplay,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF929292),
-                                  letterSpacing: 0.5,
-                                ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          child: TextField(
+                            controller: _lastNameController,
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            decoration: const InputDecoration(
+                              hintText: 'Фамилия (необязательно)',
+                              hintStyle: TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                color: Color(0xFF6B7280),
+                                fontSize: 16,
                               ),
-                              const SizedBox(height: 4),
-                              TextField(
-                                controller: _lastNameController,
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Ваша фамилия',
-                                  hintStyle: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    color: Color(0xFF6B7280),
-                                    fontSize: 15,
-                                  ),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ],
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
-
-                  // ===========================================================
-                  // GROUPED CARD 2: ЮЗЕРНЕЙМ (@username)
-                  // ===========================================================
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF191919),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'ИМЯ ПОЛЬЗОВАТЕЛЯ',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontDisplay,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF929292),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            ValueListenableBuilder<TextEditingValue>(
-                              valueListenable: _usernameController,
-                              builder: (context, val, _) {
-                                final len = val.text.trim().replaceAll(RegExp(r'^@+'), '').length;
-                                return Text(
-                                  '$len/12',
-                                  style: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: (len > 0 && len < 5) ? const Color(0xFFEF4444) : const Color(0xFF929292),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Text(
-                              '@',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF929292),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: TextField(
-                                controller: _usernameController,
-                                maxLength: 12,
-                                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_]')),
-                                  LengthLimitingTextInputFormatter(12),
-                                ],
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'username',
-                                  hintStyle: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    color: Color(0xFF6B7280),
-                                    fontSize: 15,
-                                  ),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
                   const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 6, 16, 16),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 18),
                     child: Text(
-                      'От 5 до 12 символов (только латинские буквы a-z, цифры и символ _). Другие люди смогут находить вас по этому имени.',
+                      'Укажите имя и, если хотите, добавьте фотографию для Вашего профиля.',
                       style: TextStyle(
                         fontFamily: AppTheme.fontText,
-                        fontSize: 12,
+                        fontSize: 12.5,
                         color: Color(0xFF929292),
                         height: 1.35,
                       ),
@@ -1029,67 +1204,152 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                   ),
 
                   // ===========================================================
-                  // GROUPED CARD 3: О СЕБЕ / БИО
+                  // GROUPED CARD 2: О СЕБЕ (перемещен под плашку имени и фамилии)
                   // ===========================================================
                   Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFF191919),
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(22),
                       border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: TextField(
+                      controller: _descriptionController,
+                      maxLines: 3,
+                      maxLength: 140,
+                      style: const TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.35,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'О себе',
+                        hintStyle: TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Color(0xFF6B7280),
+                          fontSize: 15,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        counterStyle: TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Color(0xFF6B7280),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 18),
+                    child: Text(
+                      'Раздел «О себе» виден всем.',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 12.5,
+                        color: Color(0xFF929292),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+
+                  // ===========================================================
+                  // GROUPED CARD 3: ИМЯ ПОЛЬЗОВАТЕЛЯ С ИКОНКОЙ @ (1:1 с референсом)
+                  // ===========================================================
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
                       children: [
-                        const Text(
-                          'О СЕБЕ',
-                          style: TextStyle(
-                            fontFamily: AppTheme.fontDisplay,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF929292),
-                            letterSpacing: 0.5,
+                        // Фиолетовая иконка @
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF5E5CE6),
+                            borderRadius: BorderRadius.circular(8.5),
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.alternate_email_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _descriptionController,
-                          maxLines: 4,
-                          maxLength: 140,
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontText,
+                        const SizedBox(width: 14),
+                        const Text(
+                          'Имя пользователя',
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontDisplay,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w500,
                             color: Colors.white,
-                            fontSize: 14.5,
-                            height: 1.35,
                           ),
-                          decoration: const InputDecoration(
-                            hintText: 'Расскажите немного о себе...',
-                            hintStyle: TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              color: Color(0xFF6B7280),
-                              fontSize: 14.5,
-                            ),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
-                            counterStyle: TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              color: Color(0xFF6B7280),
-                              fontSize: 11,
-                            ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              const Text(
+                                '@',
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF3B98FF),
+                                ),
+                              ),
+                              Flexible(
+                                child: IntrinsicWidth(
+                                  child: TextField(
+                                    controller: _usernameController,
+                                    maxLength: 12,
+                                    buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_]')),
+                                      LengthLimitingTextInputFormatter(12),
+                                    ],
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontText,
+                                      color: Color(0xFF3B98FF),
+                                      fontSize: 15.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      hintText: 'username',
+                                      hintStyle: TextStyle(
+                                        fontFamily: AppTheme.fontText,
+                                        color: Color(0xFF6B7280),
+                                        fontSize: 15.5,
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
                   const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 6, 16, 24),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     child: Text(
-                      'Любые подробности о вас, ссылки или интересы. Описание отображается в вашем профиле.',
+                      'От 5 до 12 символов (только латинские буквы a-z, цифры и символ _). Другие люди смогут находить вас по этому имени.',
                       style: TextStyle(
                         fontFamily: AppTheme.fontText,
                         fontSize: 12,
-                        color: Color(0xFF6B7280),
+                        color: Color(0xFF929292),
                         height: 1.35,
                       ),
                     ),

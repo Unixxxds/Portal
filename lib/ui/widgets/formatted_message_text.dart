@@ -1,21 +1,31 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 
-/// Renders message text with Telegram-style colored Quote ("Цитата") blocks.
+/// Renders message text with:
+/// - Telegram-style colored Quote ("Цитата") blocks
+/// - Clickable @username mentions (blue for others, white underlined for self)
+/// - Clickable links / URLs (blue for others, white underlined for self)
 class FormattedMessageText extends StatelessWidget {
   final String text;
   final int messageId;
   final TextStyle? style;
+  final bool isMe;
+  final void Function(String username)? onUsernameTap;
+  final void Function(String url)? onLinkTap;
 
   const FormattedMessageText({
     super.key,
     required this.text,
     this.messageId = 0,
     this.style,
+    this.isMe = false,
+    this.onUsernameTap,
+    this.onLinkTap,
   });
 
   static const List<Color> _quotePalette = [
-    Color(0xFF32C759), // Emerald Green (reference)
+    Color(0xFF32C759), // Emerald Green
     Color(0xFF00C8FF), // Neon Cyan
     Color(0xFFA855F7), // Vivid Purple
     Color(0xFFFF9500), // Sunset Orange
@@ -25,7 +35,87 @@ class FormattedMessageText extends StatelessWidget {
     Color(0xFF10B981), // Mint
   ];
 
+  static final RegExp _combinedRegex = RegExp(
+    r'((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9.\-]+\.(?:com|ru|org|net|io|me|app|dev|by|kz|ua)[^\s]*)|(@[a-zA-Z0-9_]{3,32})',
+    caseSensitive: false,
+  );
+
+  Widget _buildRichText(String rawText, TextStyle defaultStyle) {
+    final matches = _combinedRegex.allMatches(rawText);
+    if (matches.isEmpty) {
+      return Text(rawText, style: defaultStyle);
+    }
+
+    final linkStyle = isMe
+        ? defaultStyle.copyWith(
+            color: Colors.white,
+            decoration: TextDecoration.underline,
+            decorationColor: Colors.white,
+          )
+        : defaultStyle.copyWith(
+            color: const Color(0xFF2990FF),
+            decoration: TextDecoration.none,
+          );
+
+    final List<InlineSpan> spans = [];
+    int lastIndex = 0;
+
+    for (final match in matches) {
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: rawText.substring(lastIndex, match.start),
+          style: defaultStyle,
+        ));
+      }
+
+      final matchedText = match.group(0)!;
+      final isUsername = matchedText.startsWith('@');
+
+      if (isUsername) {
+        final cleanUsername = matchedText.substring(1);
+        spans.add(TextSpan(
+          text: matchedText,
+          style: linkStyle,
+          recognizer: TapGestureRecognizer()
+            ..onTap = () {
+              onUsernameTap?.call(cleanUsername);
+            },
+        ));
+      } else {
+        spans.add(TextSpan(
+          text: matchedText,
+          style: linkStyle,
+          recognizer: TapGestureRecognizer()
+            ..onTap = () {
+              onLinkTap?.call(matchedText);
+            },
+        ));
+      }
+
+      lastIndex = match.end;
+    }
+
+    if (lastIndex < rawText.length) {
+      spans.add(TextSpan(
+        text: rawText.substring(lastIndex),
+        style: defaultStyle,
+      ));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      style: defaultStyle,
+    );
+  }
+
   Widget _buildQuoteBlock(String quoteText, Color color) {
+    const quoteTextStyle = TextStyle(
+      fontFamily: AppTheme.fontText,
+      color: Colors.white,
+      fontSize: 14.5,
+      height: 1.35,
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -39,7 +129,6 @@ class FormattedMessageText extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Left colored vertical accent line
                 Container(
                   width: 3.5,
                   decoration: BoxDecoration(
@@ -48,25 +137,15 @@ class FormattedMessageText extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Quoted text content
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 18),
-                    child: Text(
-                      quoteText,
-                      style: const TextStyle(
-                        fontFamily: AppTheme.fontText,
-                        color: Colors.white,
-                        fontSize: 14.5,
-                        height: 1.35,
-                      ),
-                    ),
+                    child: _buildRichText(quoteText, quoteTextStyle),
                   ),
                 ),
               ],
             ),
           ),
-          // Top-right quotation mark
           Positioned(
             top: -2,
             right: 2,
@@ -98,7 +177,7 @@ class FormattedMessageText extends StatelessWidget {
 
     final sanitizedText = text.replaceAll('&gt;', '>');
     if (!sanitizedText.contains('>') && !sanitizedText.contains('[QUOTE]')) {
-      return Text(text, style: defaultStyle);
+      return _buildRichText(text, defaultStyle);
     }
 
     final lines = sanitizedText.split('\n');
@@ -110,7 +189,7 @@ class FormattedMessageText extends StatelessWidget {
     void flushNormal() {
       if (currentNormalLines.isNotEmpty) {
         final normalText = currentNormalLines.join('\n');
-        widgets.add(Text(normalText, style: defaultStyle));
+        widgets.add(_buildRichText(normalText, defaultStyle));
         currentNormalLines.clear();
       }
     }
@@ -179,4 +258,3 @@ class FormattedMessageText extends StatelessWidget {
     );
   }
 }
-

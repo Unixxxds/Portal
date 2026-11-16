@@ -41,18 +41,17 @@ class AuthProvider with ChangeNotifier {
 
       if (token != null && token.isNotEmpty) {
         if (userId != null) {
-          DatabaseHelper.setActiveUserId(userId);
+          await DatabaseHelper.setActiveUserId(userId);
           _currentUser = await DatabaseHelper.instance.getUser(userId);
         }
         _status = AuthStatus.authenticated;
-        if (_currentUser != null) {
-          await MultiAccountService.instance.init(currentUser: _currentUser, currentToken: token);
-        }
+        await MultiAccountService.instance.init(currentUser: _currentUser, currentToken: token);
         WebSocketService.instance.connect();
         // Refresh full profile & real Sparks balance from database asynchronously
         refreshCurrentUser();
       } else {
         _status = AuthStatus.unauthenticated;
+        await MultiAccountService.instance.init();
       }
     } catch (_) {
       _status = AuthStatus.unauthenticated;
@@ -107,7 +106,7 @@ class AuthProvider with ChangeNotifier {
 
           if (res['user'] != null && res['user'] is Map<String, dynamic>) {
             _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
-            DatabaseHelper.setActiveUserId(_currentUser!.id);
+            await DatabaseHelper.setActiveUserId(_currentUser!.id);
             await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
             final db = await DatabaseHelper.instance.database;
             await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -153,7 +152,7 @@ class AuthProvider with ChangeNotifier {
 
         if (res['user'] != null && res['user'] is Map<String, dynamic>) {
           _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
-          DatabaseHelper.setActiveUserId(_currentUser!.id);
+          await DatabaseHelper.setActiveUserId(_currentUser!.id);
           await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
           final db = await DatabaseHelper.instance.database;
           await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -308,7 +307,7 @@ class AuthProvider with ChangeNotifier {
       await SecureStorageService.instance.saveCurrentUserId(targetSession.userId);
 
       // 3. Переключаем SQLite на изолированную БД целевого пользователя
-      DatabaseHelper.setActiveUserId(targetSession.userId);
+      await DatabaseHelper.setActiveUserId(targetSession.userId);
 
       // 4. Фиксируем активный аккаунт в сервисе
       await MultiAccountService.instance.setActiveAccount(targetSession.userId);
@@ -319,7 +318,10 @@ class AuthProvider with ChangeNotifier {
 
       // 6. Очищаем старые сообщения и чаты и загружаем данные нового аккаунта
       if (context.mounted) {
-        await context.read<ChatProvider>().switchAccountData();
+        await context.read<ChatProvider>().switchAccountData(onUserLoaded: (u) {
+          _currentUser = u;
+          notifyListeners();
+        });
       }
 
       // 7. Подключаем WebSocket с новым токеном

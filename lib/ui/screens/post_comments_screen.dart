@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants.dart';
 import '../../models/chat.dart';
 import '../../models/message.dart';
 import '../../models/post_comment.dart';

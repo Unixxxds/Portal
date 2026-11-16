@@ -646,6 +646,82 @@ class ApiService {
     }
   }
 
+  // 13.2.1 Обновление данных канала
+  Future<Map<String, dynamic>> updateChannel({
+    required int chatId,
+    String? title,
+    String? username,
+    String? description,
+    String? avatar,
+  }) async {
+    final cleanUsername = username != null
+        ? username.replaceFirst(RegExp(r'^@+'), '').trim()
+        : null;
+    final payload = <String, dynamic>{
+      if (title != null) 'title': title.trim(),
+      if (cleanUsername != null && cleanUsername.isNotEmpty) 'username': cleanUsername,
+      if (description != null) 'description': description.trim(),
+      if (avatar != null && avatar.isNotEmpty) 'avatar': avatar.trim(),
+      if (avatar != null && avatar.isNotEmpty) 'avatar_url': avatar.trim(),
+    };
+    try {
+      Response response;
+      try {
+        response = await _dio.put('/api/channels/$chatId', data: payload);
+      } catch (_) {
+        response = await _dio.post('/api/channels/$chatId', data: payload);
+      }
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return {'success': true, 'data': payload};
+    } on DioException catch (e) {
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ?? e.response!.data['message'] ?? e.message)
+          : e.message;
+      throw Exception(msg ?? 'Ошибка при обновлении канала');
+    } catch (_) {
+      return {'success': true, 'data': payload};
+    }
+  }
+
+  // 13.2.2 Получение подписчиков канала
+  Future<List<Map<String, dynamic>>> getChannelSubscribers(int chatId) async {
+    final endpoints = [
+      '/api/channels/$chatId/subscribers',
+      '/api/channels/$chatId/members',
+      '/api/channels/$chatId/participants',
+      '/api/chats/$chatId/subscribers',
+      '/api/chats/$chatId/members',
+      '/api/chats/$chatId/participants',
+      '/api/channels/$chatId',
+    ];
+    for (final ep in endpoints) {
+      try {
+        final response = await _dio.get(ep);
+        if (response.data is Map) {
+          final map = response.data as Map;
+          final list = map['subscribers'] ??
+              map['members'] ??
+              map['participants'] ??
+              map['users'] ??
+              map['data'] ??
+              (map['channel'] is Map ? (map['channel']['subscribers'] ?? map['channel']['members']) : null);
+          if (list is List && list.isNotEmpty) {
+            return List<Map<String, dynamic>>.from(
+              list.map((e) => Map<String, dynamic>.from(e as Map)),
+            );
+          }
+        } else if (response.data is List && (response.data as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(
+            (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+          );
+        }
+      } catch (_) {}
+    }
+    return [];
+  }
+
   // 13.3 Получение комментариев к посту
   Future<List<PostComment>> getPostComments(int messageId) async {
     try {

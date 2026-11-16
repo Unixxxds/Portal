@@ -30,52 +30,70 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> init({User? currentUser, String? currentToken}) async {
-    if (_isInitialized && _accounts.isNotEmpty) return;
-
     try {
       final prefs = await SharedPreferences.getInstance();
       _activeUserId = prefs.getInt(_activeAccountKey) ?? await SecureStorageService.instance.getCurrentUserId();
 
       final jsonStr = prefs.getString(_accountsKey);
-      _accounts.clear();
+      final List<AccountSession> loadedAccounts = [];
 
       if (jsonStr != null && jsonStr.isNotEmpty) {
-        final list = jsonDecode(jsonStr) as List<dynamic>;
-        for (final item in list) {
-          try {
-            _accounts.add(AccountSession.fromJson(item as Map<String, dynamic>));
-          } catch (e) {
-            debugPrint('Failed to parse account session: $e');
+        try {
+          final decoded = jsonDecode(jsonStr);
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic>) {
+                try {
+                  final session = AccountSession.fromJson(item);
+                  if (session.userId > 0) {
+                    loadedAccounts.add(session);
+                  }
+                } catch (e) {
+                  debugPrint('Failed to parse account session: $e');
+                }
+              }
+            }
           }
+        } catch (e) {
+          debugPrint('Failed to decode accounts json: $e');
         }
+      }
+
+      if (loadedAccounts.isNotEmpty) {
+        _accounts.clear();
+        _accounts.addAll(loadedAccounts);
       }
 
       // Auto-register current session if not yet in accounts list
       final token = currentToken ?? await SecureStorageService.instance.getToken();
-      final userId = currentUser?.id ?? await SecureStorageService.instance.getCurrentUserId();
+      final secureUserId = await SecureStorageService.instance.getCurrentUserId();
+      final userId = currentUser?.id ?? secureUserId;
 
-      if (token != null && token.isNotEmpty && userId != null && userId > 0 && currentUser != null) {
+      if (token != null && token.isNotEmpty && userId != null && userId > 0) {
         final existingIdx = _accounts.indexWhere((a) => a.userId == userId);
         if (existingIdx == -1) {
-          _accounts.add(AccountSession(
-            userId: userId,
-            token: token,
-            user: currentUser,
-            lastActive: DateTime.now(),
-          ));
-          await _persist();
+          if (currentUser != null) {
+            _accounts.add(AccountSession(
+              userId: userId,
+              token: token,
+              user: currentUser,
+              lastActive: DateTime.now(),
+            ));
+          }
         } else {
           // Update user info
           _accounts[existingIdx] = _accounts[existingIdx].copyWith(
-            user: currentUser,
+            user: currentUser ?? _accounts[existingIdx].user,
             token: token,
             lastActive: DateTime.now(),
           );
-          await _persist();
         }
       }
 
       _isInitialized = true;
+      if (_accounts.isNotEmpty) {
+        await _persist();
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('MultiAccountService.init error: $e');
@@ -83,6 +101,9 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> saveAccount(AccountSession session) async {
+    if (!_isInitialized) {
+      await init();
+    }
     final idx = _accounts.indexWhere((a) => a.userId == session.userId);
     if (idx != -1) {
       _accounts[idx] = session;
@@ -90,11 +111,15 @@ class MultiAccountService with ChangeNotifier {
       _accounts.add(session);
     }
     _activeUserId = session.userId;
+    _isInitialized = true;
     await _persist();
     notifyListeners();
   }
 
   Future<void> setActiveAccount(int userId) async {
+    if (!_isInitialized) {
+      await init();
+    }
     _activeUserId = userId;
     final idx = _accounts.indexWhere((a) => a.userId == userId);
     if (idx != -1) {
@@ -107,6 +132,9 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> updateUser(User user) async {
+    if (!_isInitialized) {
+      await init();
+    }
     final idx = _accounts.indexWhere((a) => a.userId == user.id);
     if (idx != -1) {
       _accounts[idx] = _accounts[idx].copyWith(user: user);
@@ -116,6 +144,9 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> updateUnread(int userId, int unreadCount) async {
+    if (!_isInitialized) {
+      await init();
+    }
     final idx = _accounts.indexWhere((a) => a.userId == userId);
     if (idx != -1 && _accounts[idx].unreadCount != unreadCount) {
       _accounts[idx] = _accounts[idx].copyWith(unreadCount: unreadCount);
@@ -125,6 +156,9 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> removeAccount(int userId) async {
+    if (!_isInitialized) {
+      await init();
+    }
     _accounts.removeWhere((a) => a.userId == userId);
     if (_activeUserId == userId) {
       _activeUserId = _accounts.isNotEmpty ? _accounts.first.userId : null;
@@ -148,6 +182,7 @@ class MultiAccountService with ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    if (!_isInitialized) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = _accounts.map((a) => a.toJson()).toList();

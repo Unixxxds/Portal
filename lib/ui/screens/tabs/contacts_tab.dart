@@ -4,6 +4,7 @@ import '../../../providers/chat_provider.dart';
 import '../../theme.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
+import '../../widgets/telegram_chat_route.dart';
 import '../chat_screen.dart';
 
 class ContactsTab extends StatefulWidget {
@@ -177,7 +178,7 @@ class _ContactsTabState extends State<ContactsTab> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => ChatScreen(chat: contact)),
+                              TelegramChatRoute(builder: (context) => ChatScreen(chat: contact)),
                             );
                           },
                         );

@@ -39,14 +39,39 @@ class AccountSession {
     'lastActive': lastActive.toIso8601String(),
   };
 
-  factory AccountSession.fromJson(Map<String, dynamic> json) => AccountSession(
-    userId: json['userId'] as int,
-    token: json['token'] as String,
-    user: User.fromMap(json['user'] as Map<String, dynamic>),
-    unreadCount: (json['unreadCount'] as int?) ?? 0,
-    lastActive: json['lastActive'] != null
-        ? DateTime.tryParse(json['lastActive'].toString()) ?? DateTime.now()
-        : DateTime.now(),
-  );
+  factory AccountSession.fromJson(Map<String, dynamic> json) {
+    final rawUser = json['user'];
+    User parsedUser;
+    if (rawUser is Map<String, dynamic>) {
+      try {
+        parsedUser = rawUser.containsKey('first_name')
+            ? User.fromMap(rawUser)
+            : User.fromJson(rawUser);
+      } catch (_) {
+        parsedUser = User.fromJson(rawUser);
+      }
+    } else {
+      final uid = int.tryParse(json['userId']?.toString() ?? '0') ?? 0;
+      parsedUser = User(
+        id: uid,
+        firstName: '',
+        lastName: '',
+        username: '',
+        avatar: '',
+      );
+    }
+
+    final parsedUserId = int.tryParse(json['userId']?.toString() ?? '') ?? parsedUser.id;
+
+    return AccountSession(
+      userId: parsedUserId,
+      token: json['token']?.toString() ?? '',
+      user: parsedUser,
+      unreadCount: int.tryParse(json['unreadCount']?.toString() ?? '0') ?? 0,
+      lastActive: json['lastActive'] != null
+          ? DateTime.tryParse(json['lastActive'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
 }
 

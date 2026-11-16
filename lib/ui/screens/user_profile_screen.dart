@@ -192,7 +192,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       }
 
       // Перезагружаем подарки с подтвержденным userId пользователя
-      if (resolvedUserId != null && resolvedUserId! > 0) {
+      if (resolvedUserId != null && resolvedUserId > 0) {
         _loadGifts(targetId: resolvedUserId);
       }
     }
@@ -524,43 +524,45 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    if (!isCurrentUser) ...[
+                      const SizedBox(width: 12),
 
-                    // "Звонок" Button (Graphite #191919)
-                    Expanded(
-                      child: InkWell(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Аудиозвонок...')),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF191919),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.phone_outlined, color: Colors.white, size: 18),
-                              SizedBox(width: 8),
-                              Text(
-                                'Звонок',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
+                      // "Звонок" Button (Graphite #191919)
+                      Expanded(
+                        child: InkWell(
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Аудиозвонок...')),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF191919),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.phone_outlined, color: Colors.white, size: 18),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Звонок',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -701,6 +703,55 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                   ],
                 ),
               ),
+
+              // ===============================================================
+              // VERIFICATION OFFICIAL BADGE FOOTER
+              // ===============================================================
+              if (isVerified) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Center(
+                    child: Builder(
+                      builder: (badgeContext) => GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => VerificationBadge.showVerificationPopover(badgeContext, verification),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              WidgetSpan(
+                                alignment: PlaceholderAlignment.middle,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: VerificationBadge(
+                                    verification: verification,
+                                    size: 14,
+                                    color: Colors.white,
+                                    opacity: 0.60,
+                                    interactive: false,
+                                  ),
+                                ),
+                              ),
+                              TextSpan(
+                                text: 'Этот аккаунт подтверждён представителями Portal как официальный',
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white.withOpacity(0.50),
+                                  height: 1.35,
+                                  letterSpacing: -0.1,
+                                ),
+                              ),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
 
               // ===============================================================

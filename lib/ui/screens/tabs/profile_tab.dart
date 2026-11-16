@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../data/database_helper.dart';
@@ -14,8 +17,11 @@ import '../../widgets/badges.dart';
 import '../../widgets/gift_detail_modal.dart';
 import '../../widgets/gift_visuals.dart';
 import '../../widgets/profile_gift_bubbles_avatar.dart';
+import '../../widgets/telegram_chat_route.dart';
+import '../../widgets/telegram_profile_route.dart';
 import '../chat_screen.dart';
 import '../edit_profile_screen.dart';
+import '../profile_qr_screen.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -98,6 +104,377 @@ class _ProfileTabState extends State<ProfileTab> {
         setState(() => _isLoadingGifts = false);
       }
     }
+  }
+
+  Future<void> _pickAndUploadProfileAvatar(BuildContext context) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 92);
+      if (picked != null && picked.path.isNotEmpty) {
+        final file = File(picked.path);
+        if (await file.exists()) {
+          final url = await ApiService.instance.uploadAvatar(file);
+          if (context.mounted && url.isNotEmpty) {
+            final auth = context.read<AuthProvider>();
+            final u = auth.currentUser;
+            if (u != null) {
+              await auth.updateProfile(
+                firstName: u.firstName,
+                lastName: u.lastName,
+                username: u.username,
+                description: u.description,
+                avatar: url,
+                bannerUrl: u.bannerUrl,
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Фото профиля обновлено', style: TextStyle(color: Colors.white)),
+                  backgroundColor: const Color(0xFF191919),
+                  duration: const Duration(seconds: 1),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки: $e'), backgroundColor: const Color(0xFF191919)),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadProfileBanner(BuildContext context, {bool pickMedia = false}) async {
+    final auth = context.read<AuthProvider>();
+    final u = auth.currentUser;
+    if (u == null) return;
+    if (!u.isPremium) {
+      _showPremiumBannerNotice(context);
+      return;
+    }
+    try {
+      final picker = ImagePicker();
+      XFile? picked;
+      if (pickMedia) {
+        try {
+          picked = await picker.pickMedia();
+        } catch (_) {
+          picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 95);
+        }
+      } else {
+        picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 92);
+      }
+      if (picked != null && picked.path.isNotEmpty) {
+        final file = File(picked.path);
+        if (await file.exists()) {
+          final url = await ApiService.instance.uploadBanner(file);
+          if (context.mounted && url.isNotEmpty) {
+            await auth.updateProfile(
+              firstName: u.firstName,
+              lastName: u.lastName,
+              username: u.username,
+              description: u.description,
+              avatar: u.avatar,
+              bannerUrl: url,
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Баннер профиля обновлен', style: TextStyle(color: Colors.white)),
+                backgroundColor: const Color(0xFF191919),
+                duration: const Duration(seconds: 1),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки: $e'), backgroundColor: const Color(0xFF191919)),
+        );
+      }
+    }
+  }
+
+  void _showPremiumBannerNotice(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF191919),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0x40FFFFFF),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B98FF).withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: PremiumBadge(size: 32),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Баннер только с Premium',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontDisplay,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Кастомный баннер доступен только с подпиской Premium. Оформите Premium, чтобы персонализировать фон своего профиля.',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontText,
+                    fontSize: 14,
+                    color: Color(0xFF929292),
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Container(
+                    width: double.infinity,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3B98FF),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Понятно',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showProfileEditMenu(BuildContext context) {
+    final auth = context.read<AuthProvider>();
+    final user = auth.currentUser;
+    final isPremium = user?.isPremium ?? false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF191919),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0x40FFFFFF),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF242424),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.edit_note_rounded, color: Colors.white, size: 20),
+                  ),
+                  title: const Text(
+                    'Редактировать профиль',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Имя, фамилия, юзернейм, о себе',
+                    style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF242424),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add_a_photo_outlined, color: Colors.white, size: 19),
+                  ),
+                  title: const Text(
+                    'Изменить фото профиля',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Выбрать новое фото из галереи',
+                    style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickAndUploadProfileAvatar(context);
+                  },
+                ),
+                const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF242424),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isPremium ? Icons.panorama_outlined : Icons.star_rounded,
+                      color: isPremium ? Colors.white : const Color(0xFF3B98FF),
+                      size: 20,
+                    ),
+                  ),
+                  title: Row(
+                    children: [
+                      const Text(
+                        'Изменить баннер',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (!isPremium) ...[
+                        const SizedBox(width: 8),
+                        const PremiumBadge(size: 14),
+                      ],
+                    ],
+                  ),
+                  subtitle: Text(
+                    isPremium
+                        ? 'Статичный фон, Live-фото или GIF/WebP анимация'
+                        : 'Доступно только с подпиской Premium',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      color: isPremium ? const Color(0xFF929292) : const Color(0xFF3B98FF),
+                      fontSize: 12,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    if (isPremium) {
+                      _pickAndUploadProfileBanner(context);
+                    } else {
+                      _showPremiumBannerNotice(context);
+                    }
+                  },
+                ),
+                if (user != null && user.username.isNotEmpty) ...[
+                  const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                  ListTile(
+                    leading: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF242424),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.copy_rounded, color: Colors.white, size: 18),
+                    ),
+                    title: const Text(
+                      'Скопировать ссылку на профиль',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '@${user.username}',
+                      style: const TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Clipboard.setData(ClipboardData(text: 'https://t.me/${user.username}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Ссылка скопирована в буфер', style: TextStyle(color: Colors.white)),
+                          backgroundColor: const Color(0xFF191919),
+                          duration: const Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -226,32 +603,40 @@ class _ProfileTabState extends State<ProfileTab> {
                       ),
                     ),
 
-                    // Top Bar over banner: "Профиль" title + "Изм." button
+                    // Top Bar over banner: Круглая кнопка с QR-кодом + "Изм."
                     Positioned(
                       top: MediaQuery.of(context).padding.top + 8,
                       left: 18,
                       right: 16,
                       child: Row(
                         children: [
-                          const Text(
-                            'Профиль',
-                            style: TextStyle(
-                              fontFamily: AppTheme.fontDisplay,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.6,
-                              color: Colors.white,
-                              shadows: [Shadow(color: Colors.black87, blurRadius: 10)],
-                            ),
-                          ),
-                          const Spacer(),
                           GestureDetector(
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+                                TelegramProfileRoute(
+                                  builder: (_) => const ProfileQrScreen(),
+                                ),
                               );
                             },
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: const Color(0xCC191919),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: const Color(0x33FFFFFF), width: 1.0),
+                              ),
+                              child: const Icon(
+                                Icons.qr_code_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () => _showProfileEditMenu(context),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                               decoration: BoxDecoration(
@@ -290,12 +675,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         child: ProfileGiftBubblesAvatar(
                           avatarRadius: 45,
                           gifts: _userGifts,
-                          onAvatarTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-                            );
-                          },
+                          onAvatarTap: () => _showProfileEditMenu(context),
                           onGiftTap: (gift) {
                             GiftDetailModal.show(
                               context,
@@ -356,24 +736,33 @@ class _ProfileTabState extends State<ProfileTab> {
                 padding: const EdgeInsets.fromLTRB(18, 12, 16, 16),
                 child: Row(
                   children: [
-                    const Text(
-                      'Профиль',
-                      style: TextStyle(
-                        fontFamily: AppTheme.fontDisplay,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.6,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const Spacer(),
                     GestureDetector(
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+                          TelegramProfileRoute(
+                            builder: (_) => const ProfileQrScreen(),
+                          ),
                         );
                       },
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                        ),
+                        child: const Icon(
+                          Icons.qr_code_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => _showProfileEditMenu(context),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
@@ -408,12 +797,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 child: ProfileGiftBubblesAvatar(
                   avatarRadius: 46,
                   gifts: _userGifts,
-                  onAvatarTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-                    );
-                  },
+                  onAvatarTap: () => _showProfileEditMenu(context),
                   onGiftTap: (gift) {
                     GiftDetailModal.show(
                       context,
@@ -640,7 +1024,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => ChatScreen(chat: savedMessagesChat)),
+                          TelegramChatRoute(builder: (context) => ChatScreen(chat: savedMessagesChat)),
                         );
                       },
                     ),

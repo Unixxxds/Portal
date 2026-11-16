@@ -12,7 +12,6 @@ import '../../core/constants.dart';
 import '../../core/user_activity_helper.dart';
 import '../../models/chat.dart';
 import '../../models/message.dart';
-import '../../models/message_reaction.dart';
 import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -31,6 +30,7 @@ import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/portal_emoji_picker.dart';
 import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_bubble.dart';
+import '../widgets/telegram_chat_route.dart';
 import '../widgets/telegram_message_context_menu.dart';
 import '../widgets/telegram_message_entrance.dart';
 import '../widgets/telegram_profile_route.dart';
@@ -38,7 +38,9 @@ import '../widgets/telegram_swipe_to_reply.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
 import '../widgets/telegram_typing_indicator.dart';
 import '../widgets/voice_message_bubble.dart';
+import '../widgets/fullscreen_gallery_viewer.dart';
 import 'user_profile_screen.dart';
+import 'channel_profile_screen.dart';
 import 'post_comments_screen.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -67,6 +69,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool? _liveIsPremium;
   int? _channelOwnerId;
   bool _canPostToChannel = false;
+  bool _isSending = false;
   bool _isSendingSticker = false;
   String? _liveTitle;
   String? _liveAvatar;
@@ -203,9 +206,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             if (isOwner || canSend) {
               _canPostToChannel = true;
             }
-            if (verif != null && verif.isNotEmpty && verif != 'none') {
-              _liveVerification = verif;
-            }
+            final cleanVerif = (verif != null && verif.isNotEmpty && verif != 'none')
+                ? verif
+                : ((uname?.toLowerCase() == 'portal' || widget.chat.username?.toLowerCase() == 'portal') ? 'verified' : 'none');
+            _liveVerification = cleanVerif;
             if (title != null && title.isNotEmpty) {
               _liveTitle = title;
             }
@@ -218,6 +222,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           });
 
           final chatProv = context.read<ChatProvider>();
+          final cleanVerif = (verif != null && verif.isNotEmpty && verif != 'none')
+              ? verif
+              : ((uname?.toLowerCase() == 'portal' || widget.chat.username?.toLowerCase() == 'portal') ? 'verified' : 'none');
           final existing = chatProv.chats.where((c) => c.isChannel && c.id == widget.chat.id).firstOrNull;
           if (existing != null) {
             final updated = existing.copyWith(
@@ -226,13 +233,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               username: (uname != null && uname.isNotEmpty) ? uname : existing.username,
               subscribersCount: _subscribersCount,
               isSubscribed: _isSubscribed,
-              verification: (verif != null && verif.isNotEmpty && verif != 'none') ? verif : existing.verification,
+              verification: cleanVerif,
             );
             chatProv.addOrUpdateChat(updated);
-          } else if (verif != null && verif.isNotEmpty && verif != 'none') {
+          } else {
             chatProv.updateChatVerification(
               chatId: widget.chat.id,
-              verification: verif,
+              verification: cleanVerif,
             );
           }
         }
@@ -341,8 +348,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _handleSend() async {
+    if (_isSending) return;
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+
+    _isSending = true;
 
     // Trigger Telegram-style punch animation on send button
     _sendBtnAnimController.forward(from: 0.0);
@@ -354,23 +364,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
     _textController.clear();
 
-    if (_editingMessage != null) {
-      final editId = _editingMessage!.id;
+    try {
+      if (_editingMessage != null) {
+        final editId = _editingMessage!.id;
+        setState(() {
+          _editingMessage = null;
+        });
+        final provider = context.read<ChatProvider>();
+        await provider.editMessage(widget.chat.id, editId, text);
+        return;
+      }
+
+      final replyId = _replyingToMessage?.id;
       setState(() {
-        _editingMessage = null;
+        _replyingToMessage = null;
       });
       final provider = context.read<ChatProvider>();
-      await provider.editMessage(widget.chat.id, editId, text);
-      return;
+      await provider.sendMessage(widget.chat.id, text, replyToMessageId: replyId);
+      _scrollToBottom();
+    } finally {
+      _isSending = false;
     }
-
-    final replyId = _replyingToMessage?.id;
-    setState(() {
-      _replyingToMessage = null;
-    });
-    final provider = context.read<ChatProvider>();
-    await provider.sendMessage(widget.chat.id, text, replyToMessageId: replyId);
-    _scrollToBottom();
   }
 
   Future<void> _sendGreetingSticker() async {
@@ -694,7 +708,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         )
                       : NotificationListener<ScrollNotification>(
                           onNotification: (notification) {
-                            if (notification is ScrollStartNotification && _showEmojiPicker) {
+                            if (notification is ScrollStartNotification &&
+                                notification.dragDetails != null &&
+                                !_isSendingSticker &&
+                                _showEmojiPicker) {
                               setState(() {
                                 _showEmojiPicker = false;
                               });
@@ -837,7 +854,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           const SizedBox(height: 14),
           const Text(
             'Избранное',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: AppTheme.fontDisplay,
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -1411,335 +1428,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // ===========================================================================
-  // CHANNEL INFO MODAL (Sheet with avatar on the right, title, and @username)
+  // CHANNEL PROFILE SCREEN
   // ===========================================================================
   void _showChannelInfoModal(BuildContext context, Chat chat) {
-    final rawTitle = chat.title.startsWith('📢') ? chat.title.substring(1).trim() : chat.title;
-    final channelTitle = rawTitle.isEmpty ? 'Канал' : rawTitle;
-    final channelUsername = (chat.username != null && chat.username!.isNotEmpty)
-        ? (chat.username!.startsWith('@') ? chat.username! : '@${chat.username!}')
-        : (channelTitle.toLowerCase().contains('portal') ? '@portal' : '@channel');
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.65),
-      builder: (modalCtx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.85,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF191919),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-                border: Border.all(
-                  color: const Color(0x1AFFFFFF),
-                  width: 1.0,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black54,
-                    blurRadius: 25,
-                    offset: Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Drag Handle
-                      Center(
-                        child: Container(
-                          width: 38,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: const Color(0x33FFFFFF),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Header Row: Channel Name on the left, Avatar on the right (1:1 with user prompt)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        channelTitle,
-                                        style: const TextStyle(
-                                          fontFamily: AppTheme.fontDisplay,
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: -0.4,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    if (chat.isVerified || VerificationBadge.isVerified(_liveVerification)) ...[
-                                      const SizedBox(width: 6),
-                                      VerificationBadge(
-                                        verification: (_liveVerification != null && _liveVerification != 'none' && _liveVerification!.isNotEmpty)
-                                            ? _liveVerification
-                                            : chat.effectiveVerification,
-                                        size: 22,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  UserActivityHelper.formatSubscribers(_subscribersCount),
-                                  style: const TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF929292),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          AvatarWidget(
-                            avatarUrl: chat.avatar,
-                            title: channelTitle,
-                            size: 64,
-                            isChannel: true,
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Special Section: @username
-                      const Text(
-                        'ИМЯ КАНАЛА',
-                        style: TextStyle(
-                          fontFamily: AppTheme.fontDisplay,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF929292),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF121212),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: const Color(0x1AFFFFFF),
-                            width: 1.0,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                if (chat.isVerified || VerificationBadge.isVerified(_liveVerification)) ...[
-                                  VerificationBadge(
-                                    verification: (_liveVerification != null && _liveVerification != 'none' && _liveVerification!.isNotEmpty)
-                                        ? _liveVerification
-                                        : chat.effectiveVerification,
-                                    size: 18.5,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Text(
-                                  channelUsername,
-                                  style: const TextStyle(
-                                    fontFamily: AppTheme.fontDisplay,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const Spacer(),
-                                GestureDetector(
-                                  onTap: () {
-                                    Clipboard.setData(ClipboardData(text: channelUsername));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Ссылка на канал скопирована'),
-                                        duration: Duration(seconds: 1),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
-                                  },
-                                  child: const Icon(
-                                    Icons.copy_rounded,
-                                    color: Color(0xFF929292),
-                                    size: 19,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (chat.secondaryUsernames.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'а также @${chat.secondaryUsernames.join(', @')}',
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 13,
-                                  color: Color(0xFF929292),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      // Description Section (if present)
-                      if (chat.description != null && chat.description!.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        const Text(
-                          'ОПИСАНИЕ',
-                          style: TextStyle(
-                            fontFamily: AppTheme.fontDisplay,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF929292),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF121212),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: const Color(0x1AFFFFFF),
-                              width: 1.0,
-                            ),
-                          ),
-                          child: Text(
-                            chat.description!,
-                            style: const TextStyle(
-                              fontFamily: AppTheme.fontText,
-                              fontSize: 14.5,
-                              color: Colors.white,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // Owner banner OR Subscribe/Unsubscribe Button inside modal
-                      Builder(
-                        builder: (btnCtx) {
-                          final currentUserId = btnCtx.read<AuthProvider>().currentUser?.id;
-                          final isOwner = _canPostToChannel ||
-                              (currentUserId != null &&
-                               ((_channelOwnerId != null && _channelOwnerId == currentUserId) ||
-                                (chat.ownerId != null && chat.ownerId == currentUserId) ||
-                                (widget.chat.ownerId != null && widget.chat.ownerId == currentUserId)));
-
-                          if (isOwner) {
-                            return Container(
-                              width: double.infinity,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: const Color(0x1A3B98FF),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: const Color(0x333B98FF), width: 1.0),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.shield_outlined, size: 19, color: Color(0xFF3B98FF)),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Вы владелец этого канала',
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.fontDisplay,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF3B98FF),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
-                          return SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: _isSubscribing
-                                  ? null
-                                  : () async {
-                                      await _toggleSubscribe();
-                                      setModalState(() {});
-                                    },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _isSubscribed ? const Color(0xFF242424) : Colors.white,
-                                foregroundColor: _isSubscribed ? const Color(0xFF929292) : const Color(0xFF090909),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                  side: _isSubscribed
-                                      ? const BorderSide(color: Color(0x1AFFFFFF), width: 1.0)
-                                      : BorderSide.none,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    _isSubscribed ? Icons.notifications_off_outlined : Icons.add_rounded,
-                                    size: 19,
-                                    color: _isSubscribed ? const Color(0xFF929292) : const Color(0xFF090909),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _isSubscribed ? 'Отписаться от канала' : 'Подписаться на канал',
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.fontDisplay,
-                                      fontSize: 15.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: _isSubscribed ? const Color(0xFF929292) : const Color(0xFF090909),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+    Navigator.push(
+      context,
+      TelegramProfileRoute(
+        builder: (_) => ChannelProfileScreen(chat: chat),
+      ),
     );
   }
 
@@ -2044,6 +1740,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             FormattedMessageText(
               text: caption,
               messageId: msg.id,
+              isMe: false,
+              onUsernameTap: _handleUsernameTap,
+              onLinkTap: _handleLinkTap,
               style: const TextStyle(
                 fontFamily: AppTheme.fontText,
                 color: Colors.white,
@@ -2063,6 +1762,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return FormattedMessageText(
       text: msg.text,
       messageId: msg.id,
+      isMe: false,
+      onUsernameTap: _handleUsernameTap,
+      onLinkTap: _handleLinkTap,
       style: const TextStyle(
         fontFamily: AppTheme.fontText,
         color: Colors.white,
@@ -2405,6 +2107,167 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _handleLinkTap(String rawUrl) {
+    String finalUrl = rawUrl.trim();
+    if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      finalUrl = 'https://$finalUrl';
+    }
+    try {
+      if (Platform.isWindows) {
+        Process.run('cmd', ['/c', 'start', '', finalUrl]);
+      } else if (Platform.isMacOS) {
+        Process.run('open', [finalUrl]);
+      } else if (Platform.isLinux) {
+        Process.run('xdg-open', [finalUrl]);
+      } else if (Platform.isAndroid) {
+        Process.run('am', ['start', '-a', 'android.intent.action.VIEW', '-d', finalUrl]);
+      }
+    } catch (e) {
+      debugPrint('Error opening link in browser: $e');
+    }
+  }
+
+  Future<void> _handleUsernameTap(String rawUsername) async {
+    final clean = rawUsername.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (clean.isEmpty) return;
+
+    final chatProv = context.read<ChatProvider>();
+
+    // 1. Check in already loaded chats
+    final localMatch = chatProv.chats.where((c) {
+      final u = (c.username ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
+      return u == clean.toLowerCase();
+    }).firstOrNull;
+
+    if (localMatch != null) {
+      if (localMatch.isChannel) {
+        Navigator.of(context).push(
+          TelegramChatRoute(
+            builder: (_) => ChatScreen(chat: localMatch),
+          ),
+        );
+      } else {
+        Navigator.of(context).push(
+          TelegramProfileRoute(
+            builder: (_) => UserProfileScreen(chat: localMatch),
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Search on server
+    try {
+      final results = await ApiService.instance.searchUsers(clean);
+      final exactMatch = results.where((item) {
+        final u = (item['username']?.toString() ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
+        return u == clean.toLowerCase();
+      }).firstOrNull ?? (results.isNotEmpty ? results.first : null);
+
+      if (exactMatch != null && mounted) {
+        final isChan = exactMatch['is_channel'] == 1 || exactMatch['is_channel'] == true || exactMatch['type'] == 'channel';
+        final chat = Chat.fromJson(exactMatch);
+        chatProv.addOrUpdateChat(chat);
+
+        if (isChan) {
+          Navigator.of(context).push(
+            TelegramChatRoute(
+              builder: (_) => ChatScreen(chat: chat),
+            ),
+          );
+        } else {
+          Navigator.of(context).push(
+            TelegramProfileRoute(
+              builder: (_) => UserProfileScreen(chat: chat),
+            ),
+          );
+        }
+        return;
+      }
+    } catch (_) {}
+
+    // 3. Username not found: Show frosted blurred centered popup
+    if (mounted) {
+      _showUsernameNotFoundModal();
+    }
+  }
+
+  void _showUsernameNotFoundModal() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (dialogCtx) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: (MediaQuery.of(dialogCtx).size.width * 0.82).clamp(280.0, 360.0),
+                padding: const EdgeInsets.fromLTRB(22, 26, 22, 20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E20).withOpacity(0.82),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.12),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Такого юзернейма не существует.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
+                        fontFamily: AppTheme.fontDisplay,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 22),
+                    GestureDetector(
+                      onTap: () => Navigator.of(dialogCtx).pop(),
+                      child: Container(
+                        width: double.infinity,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'ОК',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: AppTheme.fontDisplay,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildMessageTextWithTime(Message msg, bool isMe, double maxBubbleWidth) {
     final timeColor = isMe ? const Color(0xCCFFFFFF) : const Color(0xFF929292);
     final timeWidget = Row(
@@ -2462,6 +2325,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           FormattedMessageText(
             text: msg.text,
             messageId: msg.id,
+            isMe: isMe,
+            onUsernameTap: _handleUsernameTap,
+            onLinkTap: _handleLinkTap,
             style: const TextStyle(
               fontFamily: AppTheme.fontText,
               color: Colors.white,
@@ -2496,6 +2362,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           FormattedMessageText(
             text: msg.text,
             messageId: msg.id,
+            isMe: isMe,
+            onUsernameTap: _handleUsernameTap,
+            onLinkTap: _handleLinkTap,
             style: const TextStyle(
               fontFamily: AppTheme.fontText,
               color: Colors.white,
@@ -2538,9 +2407,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Flexible(
-                child: Text(
-                  msg.text,
+                child: FormattedMessageText(
+                  text: msg.text,
+                  messageId: msg.id,
+                  isMe: isMe,
                   style: textStyle,
+                  onUsernameTap: _handleUsernameTap,
+                  onLinkTap: _handleLinkTap,
                 ),
               ),
               const SizedBox(width: 8),
@@ -2556,9 +2429,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              msg.text,
+            FormattedMessageText(
+              text: msg.text,
+              messageId: msg.id,
+              isMe: isMe,
               style: textStyle,
+              onUsernameTap: _handleUsernameTap,
+              onLinkTap: _handleLinkTap,
             ),
             const SizedBox(height: 3),
             Align(
@@ -3150,8 +3027,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       padding: const EdgeInsets.all(4),
                       child: Image.asset(
                         assetPath,
-                        width: 140,
-                        height: 140,
+                        width: 205,
+                        height: 205,
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -4400,6 +4277,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _handleStickerSelected(String assetPath) async {
+    if (_isSendingSticker) return;
+    _isSendingSticker = true;
     HapticFeedback.mediumImpact();
     final provider = context.read<ChatProvider>();
     final payload = '[PORTAL_STICKER]:{"asset":"$assetPath"}';
@@ -4412,7 +4291,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     try {
       await provider.sendMessage(widget.chat.id, payload, replyToMessageId: replyId);
       _scrollToBottom();
-    } catch (_) {}
+    } catch (_) {} finally {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _isSendingSticker = false;
+        }
+      });
+    }
   }
 
   // ===========================================================================
@@ -4507,7 +4392,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        crossAxisAlignment: _textController.text.contains('\n')
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.center,
                         children: [
                           // Текстовое поле ввода
                           Expanded(
@@ -4527,7 +4414,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 fontFamily: AppTheme.fontText,
                                 color: Colors.white,
                                 fontSize: 15,
-                                height: 1.25,
                               ),
                               decoration: const InputDecoration(
                                 hintText: 'Сообщение',
@@ -4535,12 +4421,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   fontFamily: AppTheme.fontText,
                                   color: Color(0xFF8E8E93),
                                   fontSize: 15,
-                                  fontWeight: FontWeight.w300,
+                                  fontWeight: FontWeight.w400,
                                   letterSpacing: -0.2,
-                                  height: 1.25,
                                 ),
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.fromLTRB(0, 5, 0, 16),
+                                contentPadding: EdgeInsets.symmetric(vertical: 8),
                                 isDense: true,
                               ),
                             ),
@@ -4846,114 +4731,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _showFullscreenGallery(List<String> imageUrls, int initialIndex) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (ctx, anim1, anim2) {
-          final pageController = PageController(initialPage: initialIndex);
-          int currentIndex = initialIndex;
-
-          return StatefulBuilder(
-            builder: (ctx, setModalState) {
-              return Scaffold(
-                backgroundColor: Colors.black.withOpacity(0.95),
-                body: Stack(
-                  children: [
-                    PageView.builder(
-                      controller: pageController,
-                      itemCount: imageUrls.length,
-                      onPageChanged: (idx) =>
-                          setModalState(() => currentIndex = idx),
-                      itemBuilder: (ctx, idx) {
-                        final rawU = imageUrls[idx];
-                        final isLocal = File(rawU).existsSync();
-                        final fullUrl = isLocal ? rawU : AppConstants.formatMediaUrl(rawU);
-
-                        return Center(
-                          child: InteractiveViewer(
-                            minScale: 0.8,
-                            maxScale: 3.5,
-                            child: isLocal
-                                ? Image.file(
-                                    File(fullUrl),
-                                    fit: BoxFit.contain,
-                                  )
-                                : CachedNetworkImage(
-                                    imageUrl: fullUrl,
-                                    cacheManager: MediaCacheService.instance.cacheManager,
-                                    fit: BoxFit.contain,
-                                    placeholder: (c, u) => const Center(
-                                      child: SizedBox(
-                                        width: 32,
-                                        height: 32,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
-                                      ),
-                                    ),
-                                    errorWidget: (c, u, s) => const Center(
-                                      child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
-                                    ),
-                                  ),
-                          ),
-                        );
-                      },
-                    ),
-
-                    // Top Bar: Close Button & Album Counter
-                    Positioned(
-                      top: MediaQuery.of(ctx).padding.top + 12,
-                      left: 16,
-                      right: 16,
-                      child: Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () => Navigator.of(ctx).pop(),
-                            child: Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.5),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: const Color(0x33FFFFFF), width: 1),
-                              ),
-                              child: const Center(
-                                child: Icon(Icons.close_rounded,
-                                    color: Colors.white, size: 20),
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          if (imageUrls.length > 1)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.55),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                    color: const Color(0x22FFFFFF), width: 1),
-                              ),
-                              child: Text(
-                                '${currentIndex + 1} из ${imageUrls.length}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: AppTheme.fontDisplay,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
+    FullscreenGalleryViewer.show(context, imageUrls: imageUrls, initialIndex: initialIndex);
   }
 }

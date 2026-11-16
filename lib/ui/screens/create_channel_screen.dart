@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/api_service.dart';
 import '../theme.dart';
+import '../widgets/telegram_chat_route.dart';
 import 'chat_screen.dart';
 
 class CreateChannelScreen extends StatefulWidget {
@@ -263,7 +264,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
           if (mounted) {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => ChatScreen(chat: createdChat!)),
+              TelegramChatRoute(builder: (context) => ChatScreen(chat: createdChat!)),
             );
           }
         }
