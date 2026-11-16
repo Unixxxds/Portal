@@ -178,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // Portal Brand Logo
                   Image.asset(
-                    'assets/images/portal-logo.png',
+                    'lib/assets/portal.png',
                     height: 48,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) => Container(
