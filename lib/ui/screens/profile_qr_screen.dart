@@ -3,11 +3,14 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/qr_matrix.dart';
 import '../../models/chat.dart';
@@ -487,7 +490,11 @@ class QrScannerScreen extends StatefulWidget {
 class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _laserController;
   final TextEditingController _inputController = TextEditingController();
+  MobileScannerController? _scannerController;
   bool _isProcessing = false;
+  bool _cameraPermissionDenied = false;
+  bool _cameraPermanentlyDenied = false;
+  final bool _isCameraPlatform = !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
   @override
   void initState() {
@@ -496,12 +503,48 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat(reverse: true);
+
+    if (_isCameraPlatform) {
+      _requestCameraPermission();
+    }
+  }
+
+  Future<void> _requestCameraPermission() async {
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      if (mounted) {
+        setState(() {
+          _cameraPermissionDenied = false;
+          _cameraPermanentlyDenied = false;
+          _scannerController ??= MobileScannerController(
+            detectionSpeed: DetectionSpeed.noDuplicates,
+            facing: CameraFacing.back,
+            returnImage: false,
+          );
+        });
+      }
+    } else if (status.isPermanentlyDenied) {
+      if (mounted) {
+        setState(() {
+          _cameraPermissionDenied = true;
+          _cameraPermanentlyDenied = true;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _cameraPermissionDenied = true;
+          _cameraPermanentlyDenied = false;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _laserController.dispose();
     _inputController.dispose();
+    _scannerController?.dispose();
     super.dispose();
   }
 
@@ -670,7 +713,18 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       final picker = ImagePicker();
       final image = await picker.pickImage(source: ImageSource.gallery);
       if (image != null && image.path.isNotEmpty) {
-        // If image selected, prompt user to confirm or scan username
+        if (_scannerController != null) {
+          try {
+            final capture = await _scannerController!.analyzeImage(image.path);
+            if (capture != null && capture.barcodes.isNotEmpty) {
+              final val = capture.barcodes.first.rawValue;
+              if (val != null && val.isNotEmpty) {
+                _processScannedCode(val);
+                return;
+              }
+            }
+          } catch (_) {}
+        }
         _showManualInputDialog(initialText: '');
       }
     } catch (_) {
@@ -804,33 +858,100 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
 
             const Spacer(),
 
-            // Viewfinder Frame with Animated Laser
+            // Viewfinder Frame with Animated Laser and Live Camera feed
             Center(
               child: Container(
-                width: 260,
-                height: 260,
+                width: 270,
+                height: 270,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: Colors.white.withOpacity(0.2),
                     width: 1.5,
                   ),
+                  color: const Color(0xFF141414),
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: Stack(
                   children: [
-                    // Corner Brackets
+                    // 1. Live camera preview on iOS / Android when permission is granted
+                    if (_isCameraPlatform && _scannerController != null && !_cameraPermissionDenied)
+                      Positioned.fill(
+                        child: MobileScanner(
+                          controller: _scannerController!,
+                          onDetect: (capture) {
+                            if (_isProcessing) return;
+                            for (final barcode in capture.barcodes) {
+                              final code = barcode.rawValue;
+                              if (code != null && code.isNotEmpty) {
+                                _processScannedCode(code);
+                                break;
+                              }
+                            }
+                          },
+                        ),
+                      )
+                    else if (_isCameraPlatform && _cameraPermissionDenied)
+                      Positioned.fill(
+                        child: Container(
+                          color: const Color(0xFF191919),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.videocam_off_rounded, color: Color(0xFF929292), size: 40),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Нет доступа к камере',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontDisplay,
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ElevatedButton(
+                                onPressed: () {
+                                  if (_cameraPermanentlyDenied) {
+                                    openAppSettings();
+                                  } else {
+                                    _requestCameraPermission();
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: Text(_cameraPermanentlyDenied ? 'В настройки' : 'Разрешить'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Positioned.fill(
+                        child: Container(color: const Color(0xFF121212)),
+                      ),
+
+                    // 2. Corner Brackets
                     Positioned.fill(
                       child: CustomPaint(
                         painter: ScannerCornerPainter(),
                       ),
                     ),
 
-                    // Animated Laser line
+                    // 3. Animated Laser line
                     AnimatedBuilder(
                       animation: _laserController,
                       builder: (context, _) {
                         return Positioned(
-                          top: _laserController.value * 230 + 10,
+                          top: _laserController.value * 240 + 10,
                           left: 12,
                           right: 12,
                           child: Container(

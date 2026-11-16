@@ -53,7 +53,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Portal требует доступ к фото для отправки медиа и смены аватара.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Portal требует доступ к камере для съёмки фото и видео.</string>
+	<string>Portal требует доступ к камере для съёмки фото, видео и сканирования QR-кодов.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Portal требует доступ к микрофону для голосовых сообщений.</string>
 </dict>
