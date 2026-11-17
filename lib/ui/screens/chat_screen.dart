@@ -2570,19 +2570,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     Rect bubbleRect;
     if (bubbleContext != null) {
       final box = bubbleContext.findRenderObject() as RenderBox?;
-      if (box != null && box.hasSize) {
+      if (box != null && box.attached && box.hasSize) {
         bubbleRect = box.localToGlobal(Offset.zero) & box.size;
       } else {
         bubbleRect = Rect.fromCenter(
           center: Offset(screenSize.width / 2, screenSize.height / 2),
-          width: screenSize.width * 0.75,
+          width: math.min(screenSize.width * 0.75, 260.0),
           height: 60,
         );
       }
     } else {
       bubbleRect = Rect.fromCenter(
         center: Offset(screenSize.width / 2, screenSize.height / 2),
-        width: screenSize.width * 0.75,
+        width: math.min(screenSize.width * 0.75, 260.0),
         height: 60,
       );
     }

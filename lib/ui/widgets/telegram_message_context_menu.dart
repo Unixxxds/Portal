@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -203,6 +204,13 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     }
   }
 
+  double _safeClamp(double val, double min, double max) {
+    if (min > max) {
+      return (min + max) / 2.0;
+    }
+    return val.clamp(min, max);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -211,15 +219,30 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     // Check current user reaction on this message
     final myReaction = widget.reactions.where((r) => r.userId == widget.currentUserId).firstOrNull?.emoji;
 
-    // Dimensions
-    const double reactionBarWidth = 338.0;
+    // Dimensions - dynamically clamped to fit even small 320-360dp phone screens safely
+    final double maxBarWidth = math.min(338.0, screenSize.width - 20.0);
+    final double reactionBarWidth = _safeClamp(maxBarWidth, 240.0, 338.0);
     const double reactionBarHeight = 50.0;
-    const double menuWidth = 250.0;
+    final double menuWidth = math.min(250.0, screenSize.width - 24.0);
+
+    // Guard against NaN/infinite bubbleRect
+    Rect safeBubbleRect = widget.bubbleRect;
+    if (safeBubbleRect.left.isNaN ||
+        safeBubbleRect.top.isNaN ||
+        safeBubbleRect.width.isNaN ||
+        safeBubbleRect.height.isNaN ||
+        safeBubbleRect.isEmpty) {
+      safeBubbleRect = Rect.fromCenter(
+        center: Offset(screenSize.width / 2, screenSize.height / 2),
+        width: math.min(screenSize.width * 0.75, 260.0),
+        height: 60,
+      );
+    }
 
     // Calculate vertical fit
-    final double rawBubbleTop = widget.bubbleRect.top;
-    final double rawBubbleBottom = widget.bubbleRect.bottom;
-    final double bubbleHeight = widget.bubbleRect.height;
+    final double rawBubbleTop = safeBubbleRect.top;
+    final double rawBubbleBottom = safeBubbleRect.bottom;
+    final double bubbleHeight = safeBubbleRect.height;
 
     // Height of menu
     final int itemCount = widget.isMe ? 7 : 6;
@@ -249,17 +272,20 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     final double reactionBarTop = effectiveBubbleTop - reactionBarHeight - 16.0;
     double reactionBarLeft;
     if (widget.isMe) {
-      reactionBarLeft = widget.bubbleRect.right - reactionBarWidth;
+      reactionBarLeft = safeBubbleRect.right - reactionBarWidth;
     } else {
-      reactionBarLeft = widget.bubbleRect.left;
+      reactionBarLeft = safeBubbleRect.left;
     }
-    // Clamp inside screen bounds
-    reactionBarLeft = reactionBarLeft.clamp(14.0, screenSize.width - reactionBarWidth - 14.0);
+    // Clamp inside screen bounds safely without lower > upper exceptions
+    final double maxBarLeft = math.max(10.0, screenSize.width - reactionBarWidth - 10.0);
+    reactionBarLeft = _safeClamp(reactionBarLeft, 10.0, maxBarLeft);
 
     // Tail cusp & dot positioning (aligned over the corner of the message bubble)
+    final double minTail = reactionBarLeft + 24.0;
+    final double maxTail = math.max(minTail, reactionBarLeft + reactionBarWidth - 24.0);
     final double tailX = widget.isMe
-        ? (widget.bubbleRect.right - 34.0).clamp(reactionBarLeft + 32.0, reactionBarLeft + reactionBarWidth - 32.0)
-        : (widget.bubbleRect.left + 34.0).clamp(reactionBarLeft + 32.0, reactionBarLeft + reactionBarWidth - 32.0);
+        ? _safeClamp(safeBubbleRect.right - 34.0, minTail, maxTail)
+        : _safeClamp(safeBubbleRect.left + 34.0, minTail, maxTail);
 
     final double cuspY = reactionBarTop + reactionBarHeight - 0.5;
     final double dotY = cuspY + 11.0;
@@ -268,11 +294,12 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     final double menuTop = effectiveBubbleBottom + 8.0;
     double menuLeft;
     if (widget.isMe) {
-      menuLeft = widget.bubbleRect.right - menuWidth;
+      menuLeft = safeBubbleRect.right - menuWidth;
     } else {
-      menuLeft = widget.bubbleRect.left;
+      menuLeft = safeBubbleRect.left;
     }
-    menuLeft = menuLeft.clamp(14.0, screenSize.width - menuWidth - 14.0);
+    final double maxMenuLeft = math.max(10.0, screenSize.width - menuWidth - 10.0);
+    menuLeft = _safeClamp(menuLeft, 10.0, maxMenuLeft);
 
     return WillPopScope(
       onWillPop: () async {
@@ -284,21 +311,26 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
         child: AnimatedBuilder(
           animation: _animCtrl,
           builder: (context, _) {
+            // Guard sigmaX against 0.0 division-by-zero on Android Skia/Impeller
+            final double blurSigma = math.max(0.001, _blurAnim.value);
+
             return Stack(
               fit: StackFit.expand,
               children: [
-                // 1. BLURRED BACKDROP
+                // 1. BLURRED BACKDROP (Wrapped in ClipRect to prevent unbound buffer white-out on Android)
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => _close(),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                        sigmaX: _blurAnim.value,
-                        sigmaY: _blurAnim.value,
-                      ),
-                      child: Container(
-                        color: Colors.black.withOpacity(_dimAnim.value),
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                        ),
+                        child: Container(
+                          color: Colors.black.withOpacity(_dimAnim.value),
+                        ),
                       ),
                     ),
                   ),
@@ -306,10 +338,10 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
                 // 2. ISOLATED MESSAGE BUBBLE (Fades in/out smoothly so no duplicate remains)
                 Positioned(
-                  left: widget.bubbleRect.left,
+                  left: safeBubbleRect.left,
                   top: effectiveBubbleTop,
-                  width: widget.bubbleRect.width,
-                  height: widget.bubbleRect.height,
+                  width: safeBubbleRect.width,
+                  height: safeBubbleRect.height,
                   child: IgnorePointer(
                     ignoring: true,
                     child: FadeTransition(
@@ -330,7 +362,7 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                     alignment: widget.isMe ? Alignment.bottomRight : Alignment.bottomLeft,
                     child: Opacity(
                       opacity: _reactionBarFade.value,
-                      child: _buildFrostedQuickReactionsBar(myReaction),
+                      child: _buildFrostedQuickReactionsBar(myReaction, reactionBarWidth),
                     ),
                   ),
                 ),
@@ -353,24 +385,19 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                     ),
                   ),
 
-                  // Floating circle bubble dot (7.5x7.5) pointing to message
+                  // Floating circle bubble dot (7.5x7.5) pointing to message (no heavy nested BackdropFilter)
                   Positioned(
                     left: tailX - 3.75,
                     top: dotY,
                     child: Opacity(
                       opacity: _reactionBarFade.value,
-                      child: ClipOval(
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            width: 7.5,
-                            height: 7.5,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xD61E1E26),
-                              border: Border.all(color: const Color(0x30FFFFFF), width: 0.85),
-                            ),
-                          ),
+                      child: Container(
+                        width: 7.5,
+                        height: 7.5,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xD61E1E26),
+                          border: Border.all(color: const Color(0x30FFFFFF), width: 0.85),
                         ),
                       ),
                     ),
@@ -405,11 +432,14 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
   // ===========================================================================
   // QUICK REACTIONS BAR (Translucent, Frosted Glass)
   // ===========================================================================
-  Widget _buildFrostedQuickReactionsBar(String? myReaction) {
+  Widget _buildFrostedQuickReactionsBar(String? myReaction, double barWidth) {
+    final double itemSize = barWidth < 300 ? 30.0 : 36.0;
+    final double emojiFontSize = barWidth < 300 ? 19.0 : 23.0;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xD61E1E26), // Translucent dark glass
@@ -423,9 +453,9 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.0),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               ..._quickReactions.asMap().entries.map((entry) {
                 final int index = entry.key;
@@ -450,8 +480,8 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: itemSize,
+                      height: itemSize,
                       decoration: BoxDecoration(
                         color: isHighlighted ? const Color(0x40000000) : Colors.transparent,
                         shape: BoxShape.circle,
@@ -462,8 +492,8 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                       alignment: Alignment.center,
                       child: Text(
                         emoji,
-                        style: const TextStyle(
-                          fontSize: 23,
+                        style: TextStyle(
+                          fontSize: emojiFontSize,
                           height: 1.1,
                         ),
                       ),
@@ -480,17 +510,17 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  width: 32,
-                  height: 32,
+                  width: barWidth < 300 ? 28.0 : 32.0,
+                  height: barWidth < 300 ? 28.0 : 32.0,
                   decoration: BoxDecoration(
                     color: const Color(0x28FFFFFF),
                     shape: BoxShape.circle,
                     border: Border.all(color: const Color(0x24FFFFFF), width: 0.8),
                   ),
                   alignment: Alignment.center,
-                  child: const Icon(
+                  child: Icon(
                     Icons.keyboard_arrow_down_rounded,
-                    size: 20,
+                    size: barWidth < 300 ? 17.0 : 20.0,
                     color: Colors.white,
                   ),
                 ),
@@ -509,7 +539,7 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xD61E1E26), // Translucent dark frosted glass matching reaction bar
