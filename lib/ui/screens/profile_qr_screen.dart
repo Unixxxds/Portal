@@ -288,27 +288,31 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
                                   version: QrVersions.auto,
                                   size: 245.0,
                                   errorCorrectionLevel: QrErrorCorrectLevel.H,
-                                  padding: EdgeInsets.zero,
+                                  padding: const EdgeInsets.all(8),
                                   eyeStyle: const QrEyeStyle(
                                     eyeShape: QrEyeShape.square,
                                     color: Colors.black,
                                   ),
                                   dataModuleStyle: const QrDataModuleStyle(
-                                    dataModuleShape: QrDataModuleShape.circle,
+                                    dataModuleShape: QrDataModuleShape.square,
                                     color: Colors.black,
+                                  ),
+                                  embeddedImage: const AssetImage('lib/assets/logo.png'),
+                                  embeddedImageStyle: const QrEmbeddedImageStyle(
+                                    size: Size(44, 44),
                                   ),
                                 ),
                                 Container(
-                                  width: 62,
-                                  height: 62,
+                                  width: 48,
+                                  height: 48,
                                   decoration: BoxDecoration(
                                     color: Colors.black,
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 3.5),
+                                    border: Border.all(color: Colors.white, width: 3.0),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.16),
-                                        blurRadius: 6,
+                                        color: Colors.black.withOpacity(0.18),
+                                        blurRadius: 4,
                                       ),
                                     ],
                                   ),
@@ -319,7 +323,7 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
                                     errorBuilder: (_, __, ___) => const Icon(
                                       Icons.door_sliding_rounded,
                                       color: Colors.white,
-                                      size: 28,
+                                      size: 20,
                                     ),
                                   ),
                                 ),
@@ -431,7 +435,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
           _cameraPermissionDenied = false;
           _cameraPermanentlyDenied = false;
           _scannerController ??= MobileScannerController(
-            detectionSpeed: DetectionSpeed.noDuplicates,
+            detectionSpeed: DetectionSpeed.normal,
+            formats: const [BarcodeFormat.qrCode],
             facing: CameraFacing.back,
             returnImage: false,
           );
@@ -467,14 +472,29 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
     setState(() => _isProcessing = true);
 
     try {
-      // 1. Extract clean username from URL or text
-      String username = rawCode.trim();
-      if (username.contains('portalmsg.ru/')) {
-        username = username.split('portalmsg.ru/').last;
-      } else if (username.contains('t.me/')) {
-        username = username.split('t.me/').last;
+      // 1. Extract clean username/slug from URL or text
+      String input = rawCode.trim();
+      String slug = input;
+      try {
+        final uri = Uri.parse(input);
+        if (uri.pathSegments.isNotEmpty) {
+          slug = uri.pathSegments.lastWhere((seg) => seg.isNotEmpty, orElse: () => uri.pathSegments.first);
+        }
+      } catch (_) {}
+
+      if (slug.contains('portalmsg.ru/')) {
+        slug = slug.split('portalmsg.ru/').last;
+      } else if (slug.contains('t.me/')) {
+        slug = slug.split('t.me/').last;
       }
-      username = username.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
+      if (slug.contains('?')) {
+        slug = slug.split('?').first;
+      }
+      if (slug.contains('#')) {
+        slug = slug.split('#').first;
+      }
+      slug = slug.replaceFirst(RegExp(r'^@+'), '').trim();
+      final username = slug.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
 
       if (username.isEmpty) {
         if (mounted) {
@@ -483,11 +503,25 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
         return;
       }
 
-      final chatProv = context.read<ChatProvider>();
-
       final numericId = (username.startsWith('id') && username.length > 2)
           ? int.tryParse(username.substring(2))
           : int.tryParse(username);
+
+      // Check if it's the current user themselves
+      final authUser = context.read<AuthProvider>().currentUser;
+      if (authUser != null) {
+        final myUsername = (authUser.username ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
+        final isMyId = (numericId != null && authUser.id == numericId);
+        final isMyUsername = (myUsername.isNotEmpty && myUsername == username.toLowerCase());
+        if (isMyId || isMyUsername) {
+          if (mounted) {
+            Navigator.pop(context); // Close scanner and return to own profile
+            return;
+          }
+        }
+      }
+
+      final chatProv = context.read<ChatProvider>();
 
       // 2. Check local loaded chats
       final localMatch = chatProv.chats.where((c) {
@@ -498,13 +532,12 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       }).firstOrNull;
 
       if (localMatch != null && mounted) {
-        Navigator.pop(context); // Close scanner
         if (localMatch.isChannel) {
-          Navigator.of(context).push(
+          Navigator.of(context).pushReplacement(
             TelegramChatRoute(builder: (_) => ChatScreen(chat: localMatch)),
           );
         } else {
-          Navigator.of(context).push(
+          Navigator.of(context).pushReplacement(
             TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: localMatch)),
           );
         }
@@ -515,22 +548,66 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       final results = await ApiService.instance.searchUsers(username);
       final exactMatch = results.where((item) {
         final u = (item['username']?.toString() ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
-        return u == username.toLowerCase();
+        if (u == username.toLowerCase()) return true;
+        final itemId = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
+        if (numericId != null && itemId == numericId) return true;
+        return false;
       }).firstOrNull ?? (results.isNotEmpty ? results.first : null);
 
       if (exactMatch != null && mounted) {
         final isChan = exactMatch['is_channel'] == 1 || exactMatch['is_channel'] == true || exactMatch['type'] == 'channel';
-        final chat = Chat.fromJson(exactMatch);
-        chatProv.addOrUpdateChat(chat);
-
-        Navigator.pop(context); // Close scanner
         if (isChan) {
-          Navigator.of(context).push(
-            TelegramChatRoute(builder: (_) => ChatScreen(chat: chat)),
+          final chatId = exactMatch['chat_id'] is int
+              ? exactMatch['chat_id'] as int
+              : (exactMatch['id'] is int ? exactMatch['id'] as int : int.tryParse(exactMatch['id']?.toString() ?? '') ?? 0);
+          final title = (exactMatch['title'] ?? exactMatch['name'] ?? 'Канал').toString();
+          final avatar = (exactMatch['avatar'] ?? exactMatch['avatar_url'] ?? '').toString();
+          final uname = exactMatch['username']?.toString();
+          final subCount = exactMatch['subscribers_count'] is int
+              ? exactMatch['subscribers_count'] as int
+              : int.tryParse(exactMatch['subscribers_count']?.toString() ?? '') ?? 0;
+          final isSubscribed = exactMatch['is_subscribed'] == 1 || exactMatch['is_subscribed'] == true;
+
+          final channelChat = Chat(
+            id: chatId,
+            title: title,
+            type: 'channel',
+            avatar: avatar,
+            isChannel: true,
+            username: uname,
+            subscribersCount: subCount,
+            isSubscribed: isSubscribed,
+          );
+          chatProv.addOrUpdateChat(channelChat);
+          Navigator.of(context).pushReplacement(
+            TelegramChatRoute(builder: (_) => ChatScreen(chat: channelChat)),
           );
         } else {
-          Navigator.of(context).push(
-            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: chat)),
+          final targetUserId = exactMatch['id'] is int
+              ? exactMatch['id'] as int
+              : int.tryParse(exactMatch['id']?.toString() ?? '') ?? 0;
+          final uname = exactMatch['username']?.toString();
+          final fName = exactMatch['first_name']?.toString() ?? '';
+          final lName = exactMatch['last_name']?.toString() ?? '';
+          final fullName = '$fName $lName'.trim();
+          final displayName = fullName.isNotEmpty ? fullName : (uname != null && uname.isNotEmpty ? uname : 'Пользователь');
+          final avatar = (exactMatch['avatar'] ?? '').toString();
+          final isOnline = exactMatch['is_online'] == 1 || exactMatch['is_online'] == true;
+          final lastSeen = exactMatch['last_seen']?.toString();
+
+          final directChat = Chat(
+            id: targetUserId,
+            title: displayName,
+            type: 'direct',
+            avatar: avatar,
+            participantId: targetUserId,
+            username: uname,
+            isOnline: isOnline,
+            lastSeen: lastSeen,
+          );
+          chatProv.addOrUpdateChat(directChat);
+          Navigator.of(context).pushReplacement(
+            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: directChat)),
           );
         }
         return;
