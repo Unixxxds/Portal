@@ -878,6 +878,7 @@ class ApiService {
     String? description,
     String? avatar,
     String? bannerUrl,
+    int? pinnedChannelId,
   }) async {
     final cleanUsername = username != null
         ? username.replaceFirst(RegExp(r'^@+'), '').trim().toLowerCase()
@@ -893,6 +894,9 @@ class ApiService {
       if (avatar != null && avatar.isNotEmpty) 'avatar': avatar.trim(),
       if (bannerUrl != null) 'bannerUrl': bannerUrl.trim(),
       if (bannerUrl != null) 'banner_url': bannerUrl.trim(),
+      'pinned_channel_id': pinnedChannelId,
+      'pinnedChannelId': pinnedChannelId,
+      'channel_id': pinnedChannelId,
     };
 
     final res = await _dio.post('/api/users/profile', data: payload);

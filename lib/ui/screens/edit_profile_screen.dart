@@ -4,11 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
+import '../../models/chat.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
+import 'create_channel_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -25,6 +28,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   String _currentAvatar = '';
   String _currentBanner = '';
+  int? _selectedChannelId;
   bool _isSaving = false;
   bool _isUploadingAvatar = false;
   bool _isUploadingBanner = false;
@@ -39,6 +43,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _descriptionController = TextEditingController(text: user?.description ?? '');
     _currentAvatar = user?.avatar ?? '';
     _currentBanner = user?.bannerUrl ?? '';
+    _selectedChannelId = user?.pinnedChannelId;
   }
 
   @override
@@ -670,6 +675,292 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     );
   }
 
+  void _showChannelSelectionModal() {
+    final chatProvider = context.read<ChatProvider>();
+    final currentUserId = context.read<AuthProvider>().currentUser?.id ?? 0;
+
+    final myChannels = chatProvider.chats.where((c) {
+      if (!c.isChannel) return false;
+      if (c.ownerId != null && c.ownerId == currentUserId) return true;
+      if (c.ownerId == null || c.ownerId == 0) return true;
+      return false;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF191919),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Handle bar
+                      Center(
+                        child: Container(
+                          width: 38,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0x40FFFFFF),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+
+                      // Title
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Канал в профиле',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  'Выберите ваш канал для отображения на странице профиля',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 13,
+                                    color: Color(0xFF929292),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.pop(ctx),
+                            child: Container(
+                              width: 30,
+                              height: 30,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF242424),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Option to unbind channel if one is selected
+                      if (_selectedChannelId != null) ...[
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: const BoxDecoration(
+                              color: Color(0x26EF4444),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.remove_circle_outline_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 20,
+                            ),
+                          ),
+                          title: const Text(
+                            'Не отображать канал',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFEF4444),
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Убрать плашку канала из профиля',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 12,
+                              color: Color(0xFF929292),
+                            ),
+                          ),
+                          onTap: () {
+                            setState(() => _selectedChannelId = null);
+                            Navigator.pop(ctx);
+                          },
+                        ),
+                        const Divider(height: 16, color: Color(0x14FFFFFF)),
+                      ],
+
+                      // List of channels
+                      if (myChannels.isNotEmpty)
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: myChannels.length,
+                            separatorBuilder: (_, __) => const Divider(
+                              height: 1,
+                              color: Color(0x14FFFFFF),
+                              indent: 56,
+                            ),
+                            itemBuilder: (_, index) {
+                              final channel = myChannels[index];
+                              final isSelected = _selectedChannelId == channel.id;
+
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                leading: AvatarWidget(
+                                  avatarUrl: channel.avatar,
+                                  title: channel.title,
+                                  size: 40,
+                                ),
+                                title: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        channel.title,
+                                        style: TextStyle(
+                                          fontFamily: AppTheme.fontDisplay,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: isSelected ? const Color(0xFF3B98FF) : Colors.white,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (channel.isVerified) ...[
+                                      const SizedBox(width: 4),
+                                      VerificationBadge(
+                                        verification: channel.effectiveVerification,
+                                        size: 14,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  channel.subscribersCount > 0
+                                      ? '${channel.subscribersCount} подписчиков'
+                                      : 'Новый канал',
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 12,
+                                    color: Color(0xFF929292),
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Color(0xFF3B98FF),
+                                        size: 22,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  setState(() => _selectedChannelId = channel.id);
+                                  Navigator.pop(ctx);
+                                },
+                              );
+                            },
+                          ),
+                        )
+                      else ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF242424),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.campaign_outlined,
+                                color: Color(0xFF929292),
+                                size: 40,
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'У вас пока нет созданных каналов',
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontDisplay,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Создайте собственный канал, чтобы закрепить его на странице своего профиля',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  fontSize: 12.5,
+                                  color: Color(0xFF929292),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const CreateChannelScreen(),
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                ),
+                                icon: const Icon(Icons.add_rounded, size: 18),
+                                label: const Text(
+                                  'Создать канал',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _handleSave() async {
     final firstName = _firstNameController.text.trim();
     if (firstName.isEmpty) {
@@ -733,6 +1024,8 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         description: _descriptionController.text.trim(),
         avatar: _currentAvatar,
         bannerUrl: _currentBanner,
+        pinnedChannelId: _selectedChannelId,
+        clearPinnedChannel: _selectedChannelId == null,
       );
 
       if (mounted) {
@@ -774,6 +1067,10 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   Widget build(BuildContext context) {
     final isPremium = context.watch<AuthProvider>().currentUser?.isPremium ?? false;
     final formattedBanner = AppConstants.formatMediaUrl(_currentBanner);
+    final chatProvider = context.watch<ChatProvider>();
+    final selectedChannel = _selectedChannelId != null
+        ? chatProvider.chats.where((c) => c.isChannel && c.id == _selectedChannelId).firstOrNull
+        : null;
 
     return Scaffold(
       backgroundColor: AppTheme.appBg,
@@ -1346,6 +1643,115 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     child: Text(
                       'От 5 до 12 символов (только латинские буквы a-z, цифры и символ _). Другие люди смогут находить вас по этому имени.',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 12,
+                        color: Color(0xFF929292),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+
+                  // ===========================================================
+                  // GROUPED CARD 4: КАНАЛ В ПРОФИЛЕ
+                  // ===========================================================
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191919),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _showChannelSelectionModal,
+                        borderRadius: BorderRadius.circular(22),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              // Синяя иконка рупора
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF007AFF),
+                                  borderRadius: BorderRadius.circular(8.5),
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.campaign_rounded,
+                                    color: Colors.white,
+                                    size: 19,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              const Text(
+                                'Каналы',
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontDisplay,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    if (selectedChannel != null) ...[
+                                      Flexible(
+                                        child: Text(
+                                          selectedChannel.title,
+                                          style: const TextStyle(
+                                            fontFamily: AppTheme.fontText,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF3B98FF),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (selectedChannel.isVerified) ...[
+                                        const SizedBox(width: 4),
+                                        VerificationBadge(
+                                          verification: selectedChannel.effectiveVerification,
+                                          size: 14,
+                                        ),
+                                      ],
+                                    ] else ...[
+                                      const Text(
+                                        'Не выбран',
+                                        style: TextStyle(
+                                          fontFamily: AppTheme.fontText,
+                                          fontSize: 14.5,
+                                          color: Color(0xFF6B7280),
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: Color(0xFF6B7280),
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Text(
+                      'Выберите канал, в котором вы являетесь создателем. Он будет закреплен и отображаться в вашем профиле.',
                       style: TextStyle(
                         fontFamily: AppTheme.fontText,
                         fontSize: 12,

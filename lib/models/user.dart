@@ -14,6 +14,7 @@ class User {
   final bool isOnline;
   final String? lastSeen;
   final List<String> secondaryUsernames;
+  final int? pinnedChannelId;
 
   User({
     required this.id,
@@ -31,6 +32,7 @@ class User {
     this.isOnline = false,
     this.lastSeen,
     this.secondaryUsernames = const [],
+    this.pinnedChannelId,
   });
 
   String get fullName {
@@ -77,6 +79,11 @@ class User {
       verification: json['verification']?.toString() ?? 'none',
       isOnline: json['is_online'] == true || json['is_online'] == 1,
       lastSeen: json['last_seen']?.toString(),
+      pinnedChannelId: json['pinned_channel_id'] is int
+          ? json['pinned_channel_id'] as int
+          : (json['channel_id'] is int
+              ? json['channel_id'] as int
+              : int.tryParse(json['pinned_channel_id']?.toString() ?? json['channel_id']?.toString() ?? '')),
       secondaryUsernames: (json['secondary_usernames'] is List)
           ? (json['secondary_usernames'] as List)
               .map((e) => e.toString().trim().replaceFirst(RegExp(r'^@+'), ''))
@@ -114,6 +121,7 @@ class User {
       'is_online': isOnline ? 1 : 0,
       'last_seen': lastSeen ?? '',
       'secondary_usernames': secondaryUsernames.join(','),
+      'pinned_channel_id': pinnedChannelId,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -131,6 +139,9 @@ class User {
     final rawOnline = map['is_online'];
     final isOnlineVal = rawOnline == 1 || rawOnline == true || rawOnline == '1';
 
+    final rawChannelId = map['pinned_channel_id'] ?? map['channel_id'];
+    final parsedChannelId = rawChannelId is int ? rawChannelId : int.tryParse(rawChannelId?.toString() ?? '');
+
     return User(
       id: parsedId,
       firstName: map['first_name']?.toString() ?? '',
@@ -146,6 +157,7 @@ class User {
       verification: map['verification']?.toString() ?? 'none',
       isOnline: isOnlineVal,
       lastSeen: map['last_seen']?.toString(),
+      pinnedChannelId: parsedChannelId,
       secondaryUsernames: (map['secondary_usernames'] is String && (map['secondary_usernames'] as String).isNotEmpty)
           ? (map['secondary_usernames'] as String)
               .split(',')
@@ -172,6 +184,8 @@ class User {
     bool? isOnline,
     String? lastSeen,
     List<String>? secondaryUsernames,
+    int? pinnedChannelId,
+    bool clearPinnedChannel = false,
   }) {
     return User(
       id: id ?? this.id,
@@ -189,6 +203,7 @@ class User {
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
       secondaryUsernames: secondaryUsernames ?? this.secondaryUsernames,
+      pinnedChannelId: clearPinnedChannel ? null : (pinnedChannelId ?? this.pinnedChannelId),
     );
   }
 }

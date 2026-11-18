@@ -210,12 +210,18 @@ class AuthProvider with ChangeNotifier {
     String? description,
     String? avatar,
     String? bannerUrl,
+    int? pinnedChannelId,
+    bool clearPinnedChannel = false,
   }) async {
     if (_currentUser == null) return;
 
     final cleanUsername = username != null
         ? username.replaceFirst(RegExp(r'^@+'), '').trim()
         : _currentUser!.username;
+
+    final effectivePinnedChannelId = clearPinnedChannel
+        ? null
+        : (pinnedChannelId ?? _currentUser!.pinnedChannelId);
 
     final updated = _currentUser!.copyWith(
       firstName: firstName ?? _currentUser!.firstName,
@@ -224,13 +230,16 @@ class AuthProvider with ChangeNotifier {
       description: description ?? _currentUser!.description,
       avatar: avatar ?? _currentUser!.avatar,
       bannerUrl: bannerUrl ?? _currentUser!.bannerUrl,
+      pinnedChannelId: effectivePinnedChannelId,
+      clearPinnedChannel: clearPinnedChannel,
     );
 
     _currentUser = updated;
     notifyListeners();
 
-    // 1. Сохраняем в локальную SQLite БД
+    // 1. Сохраняем в локальную SQLite БД и SecureStorage
     await DatabaseHelper.instance.updateUserProfile(updated);
+    await SecureStorageService.instance.saveUserPinnedChannelId(updated.id, effectivePinnedChannelId);
 
     // 2. Отправляем изменения на сервер через API
     try {
@@ -241,13 +250,17 @@ class AuthProvider with ChangeNotifier {
         description: updated.description,
         avatar: updated.avatar,
         bannerUrl: updated.bannerUrl,
+        pinnedChannelId: effectivePinnedChannelId,
       );
       if (res['user'] != null && res['user'] is Map<String, dynamic>) {
         final serverUser = User.fromJson(res['user'] as Map<String, dynamic>);
-        final finalUser = (serverUser.bannerUrl == null || serverUser.bannerUrl!.isEmpty) &&
+        var finalUser = (serverUser.bannerUrl == null || serverUser.bannerUrl!.isEmpty) &&
                 (updated.bannerUrl != null && updated.bannerUrl!.isNotEmpty)
             ? serverUser.copyWith(bannerUrl: updated.bannerUrl)
             : serverUser;
+        if (finalUser.pinnedChannelId == null && effectivePinnedChannelId != null && !clearPinnedChannel) {
+          finalUser = finalUser.copyWith(pinnedChannelId: effectivePinnedChannelId);
+        }
         _currentUser = finalUser;
         notifyListeners();
         await DatabaseHelper.instance.updateUserProfile(finalUser);
@@ -280,7 +293,13 @@ class AuthProvider with ChangeNotifier {
     try {
       final res = await ApiService.instance.getMe();
       if (res['user'] != null && res['user'] is Map<String, dynamic>) {
-        final serverUser = User.fromJson(res['user'] as Map<String, dynamic>);
+        var serverUser = User.fromJson(res['user'] as Map<String, dynamic>);
+        if (serverUser.pinnedChannelId == null) {
+          final cachedChannelId = await SecureStorageService.instance.getUserPinnedChannelId(serverUser.id);
+          if (cachedChannelId != null && cachedChannelId > 0) {
+            serverUser = serverUser.copyWith(pinnedChannelId: cachedChannelId);
+          }
+        }
         _currentUser = serverUser;
         notifyListeners();
         await DatabaseHelper.instance.updateUserProfile(serverUser);

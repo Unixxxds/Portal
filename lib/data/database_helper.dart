@@ -107,6 +107,7 @@ class DatabaseHelper {
             is_online INTEGER DEFAULT 0,
             last_seen TEXT DEFAULT '',
             secondary_usernames TEXT DEFAULT '',
+            pinned_channel_id INTEGER,
             updated_at TEXT
           );
         ''');
@@ -308,6 +309,9 @@ class DatabaseHelper {
       }
       if (!userCols.contains('secondary_usernames')) {
         await db.execute("ALTER TABLE users ADD COLUMN secondary_usernames TEXT DEFAULT '';");
+      }
+      if (!userCols.contains('pinned_channel_id')) {
+        await db.execute("ALTER TABLE users ADD COLUMN pinned_channel_id INTEGER;");
       }
       if (!userCols.contains('updated_at')) {
         await db.execute("ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT '';");

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -477,6 +478,87 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  String _formatSubscribersCount(int count) {
+    if (count <= 0) return '0 подписчиков';
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    String word = 'подписчиков';
+    if (mod100 < 11 || mod100 > 14) {
+      if (mod10 == 1) {
+        word = 'подписчик';
+      } else if (mod10 >= 2 && mod10 <= 4) {
+        word = 'подписчика';
+      }
+    }
+    return '$count $word';
+  }
+
+  String _formatPostTime(String? dateStr) {
+    if (dateStr == null || dateStr.trim().isEmpty) return '';
+    try {
+      DateTime dt;
+      final trimmed = dateStr.trim();
+      if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+        final val = int.parse(trimmed);
+        if (val > 1000000000000) {
+          dt = DateTime.fromMillisecondsSinceEpoch(val).toLocal();
+        } else {
+          dt = DateTime.fromMillisecondsSinceEpoch(val * 1000).toLocal();
+        }
+      } else {
+        dt = DateTime.parse(trimmed).toLocal();
+      }
+
+      final now = DateTime.now();
+      final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+
+      if (isToday) {
+        return '$hour:$minute';
+      }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
+      if (isYesterday) {
+        return 'Вчера';
+      }
+
+      if (dt.year == now.year) {
+        const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        return '${dt.day} ${months[dt.month - 1]}';
+      } else {
+        final d = dt.day.toString().padLeft(2, '0');
+        final mo = dt.month.toString().padLeft(2, '0');
+        final y = (dt.year % 100).toString().padLeft(2, '0');
+        return '$d.$mo.$y';
+      }
+    } catch (_) {
+      if (dateStr.length <= 5 && dateStr.contains(':')) {
+        return dateStr.trim();
+      }
+      return '';
+    }
+  }
+
+  String _cleanPostText(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Нет публикаций';
+    if (trimmed.startsWith('[PORTAL_PHOTO]:')) {
+      try {
+        final jsonStr = trimmed.substring('[PORTAL_PHOTO]:'.length).trim();
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final caption = map['caption']?.toString() ?? '';
+        return caption.isNotEmpty ? '📷 $caption' : '📷 Фотография';
+      } catch (_) {
+        return '📷 Фотография';
+      }
+    }
+    if (trimmed.startsWith('[PORTAL_STICKER]:')) return 'Стикер';
+    if (trimmed.startsWith('[PORTAL_VOICE]:')) return '🎤 Голосовое сообщение';
+    return trimmed;
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -911,6 +993,150 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // =================================================================
+            // PINNED CHANNEL CARD (Канал в профиле)
+            // =================================================================
+            Builder(
+              builder: (context) {
+                final pinnedChannel = user.pinnedChannelId != null
+                    ? chatProvider.chats.where((c) => c.isChannel && c.id == user.pinnedChannelId).firstOrNull
+                    : null;
+                if (pinnedChannel == null) return const SizedBox.shrink();
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Над плашкой: слева "КАНАЛ", справа "(кол-во) подписчиков"
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'КАНАЛ',
+                              style: TextStyle(
+                                fontFamily: AppTheme.fontDisplay,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: Color(0xFF8E8E93),
+                              ),
+                            ),
+                            Text(
+                              _formatSubscribersCount(pinnedChannel.subscribersCount),
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF8E8E93),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Сама скругленная плашка
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                TelegramChatRoute(
+                                  builder: (_) => ChatScreen(chat: pinnedChannel),
+                                ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Слева аватарка канала
+                                  AvatarWidget(
+                                    avatarUrl: pinnedChannel.avatar,
+                                    title: pinnedChannel.title,
+                                    size: 46,
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  // Около аватарки: название канала + галочка, снизу текст последнего поста
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                pinnedChannel.title,
+                                                style: const TextStyle(
+                                                  fontFamily: AppTheme.fontDisplay,
+                                                  fontSize: 15.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (pinnedChannel.isVerified) ...[
+                                              const SizedBox(width: 5),
+                                              VerificationBadge(
+                                                verification: pinnedChannel.effectiveVerification,
+                                                size: 15,
+                                              ),
+                                            ],
+                                            const SizedBox(width: 8),
+                                            // В правом верхнем углу время отправки последнего поста
+                                            Text(
+                                              _formatPostTime(pinnedChannel.lastMessageTime),
+                                              style: const TextStyle(
+                                                fontFamily: AppTheme.fontText,
+                                                fontSize: 12.5,
+                                                color: Color(0xFF8E8E93),
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _cleanPostText(pinnedChannel.lastMessageText),
+                                          style: const TextStyle(
+                                            fontFamily: AppTheme.fontText,
+                                            fontSize: 13.5,
+                                            color: Color(0xFF929292),
+                                            height: 1.25,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
 
             // =================================================================
             // SECTION: ПОДАРКИ (3-Column Square Grid)

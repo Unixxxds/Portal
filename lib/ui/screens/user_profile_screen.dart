@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,8 @@ import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
 import '../widgets/profile_gift_bubbles_avatar.dart';
 import '../widgets/send_gift_modal.dart';
+import '../widgets/telegram_chat_route.dart';
+import 'chat_screen.dart';
 import 'edit_profile_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
@@ -33,6 +36,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
   User? _userProfile;
   List<UserGift> _userGifts = [];
   bool _isLoadingGifts = false;
+  Chat? _pinnedChannel;
+  int? _resolvedChannelId;
 
   late final AnimationController _entranceController;
   late final Animation<double> _contentFadeAnim;
@@ -57,6 +62,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       curve: const Interval(0.10, 1.0, curve: Curves.easeOutCubic),
     ));
     _entranceController.forward();
+
+    final currentAuth = context.read<AuthProvider>().currentUser;
+    final targetUserId = widget.chat.participantId ?? widget.chat.id;
+    final isSelf = currentAuth != null && currentAuth.id == targetUserId;
+    final initChannelId = isSelf ? currentAuth.pinnedChannelId : null;
+    if (initChannelId != null && initChannelId > 0) {
+      _resolvePinnedChannel(initChannelId);
+    }
 
     _loadProfile();
     _loadGifts();
@@ -189,6 +202,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
           isPremium: _userProfile!.isPremium,
         );
         setState(() {});
+
+        final chId = freshUser.pinnedChannelId;
+        if (chId != null && chId > 0) {
+          _resolvePinnedChannel(chId);
+        }
       }
 
       // Перезагружаем подарки с подтвержденным userId пользователя
@@ -196,6 +214,169 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
         _loadGifts(targetId: resolvedUserId);
       }
     }
+  }
+
+  Future<void> _resolvePinnedChannel(int channelId) async {
+    if (channelId <= 0 || _resolvedChannelId == channelId) return;
+    _resolvedChannelId = channelId;
+
+    // 1. Check ChatProvider
+    final chatProv = context.read<ChatProvider>();
+    final fromProvider = chatProv.chats.where((c) => c.isChannel && c.id == channelId).firstOrNull;
+    if (fromProvider != null) {
+      if (mounted) {
+        setState(() => _pinnedChannel = fromProvider);
+      }
+      if (fromProvider.lastMessageText.isEmpty) {
+        _fetchLatestChannelPost(channelId);
+      }
+      return;
+    }
+
+    // 2. Database or API
+    try {
+      final cachedChat = await DatabaseHelper.instance.getChat(channelId);
+      if (cachedChat != null && mounted) {
+        setState(() => _pinnedChannel = cachedChat);
+      }
+
+      final msgs = await ApiService.instance.getChatHistory(channelId, isChannel: true, limit: 1);
+      final lastMsg = msgs.isNotEmpty ? msgs.first : null;
+      final lastText = lastMsg?['text']?.toString() ?? cachedChat?.lastMessageText ?? '';
+      final lastTime = lastMsg?['created_at']?.toString() ?? lastMsg?['time']?.toString() ?? cachedChat?.lastMessageTime ?? '';
+
+      final results = await ApiService.instance.searchUsers(channelId.toString());
+      final match = results.where((item) {
+        final id = item['chat_id'] ?? item['id'];
+        return id != null && id.toString() == channelId.toString();
+      }).firstOrNull;
+
+      if (match != null && mounted) {
+        final channelChat = Chat(
+          id: channelId,
+          title: (match['title'] ?? match['name'] ?? cachedChat?.title ?? 'Канал').toString(),
+          type: 'channel',
+          avatar: (match['avatar'] ?? match['avatar_url'] ?? cachedChat?.avatar ?? '').toString(),
+          isChannel: true,
+          username: match['username']?.toString() ?? cachedChat?.username,
+          subscribersCount: match['subscribers_count'] is int
+              ? match['subscribers_count'] as int
+              : int.tryParse(match['subscribers_count']?.toString() ?? '') ?? (cachedChat?.subscribersCount ?? 0),
+          verification: match['verification']?.toString() ?? cachedChat?.verification,
+          lastMessageText: lastText,
+          lastMessageTime: lastTime,
+        );
+        setState(() => _pinnedChannel = channelChat);
+        chatProv.addOrUpdateChat(channelChat);
+      } else if (cachedChat != null && mounted) {
+        setState(() {
+          _pinnedChannel = cachedChat.copyWith(
+            lastMessageText: lastText.isNotEmpty ? lastText : cachedChat.lastMessageText,
+            lastMessageTime: lastTime.isNotEmpty ? lastTime : cachedChat.lastMessageTime,
+          );
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchLatestChannelPost(int channelId) async {
+    try {
+      final msgs = await ApiService.instance.getChatHistory(channelId, isChannel: true, limit: 1);
+      if (msgs.isNotEmpty && mounted && _pinnedChannel != null) {
+        final first = msgs.first;
+        final text = first['text']?.toString() ?? '';
+        final time = first['created_at']?.toString() ?? first['time']?.toString() ?? '';
+        if (text.isNotEmpty || time.isNotEmpty) {
+          setState(() {
+            _pinnedChannel = _pinnedChannel!.copyWith(
+              lastMessageText: text,
+              lastMessageTime: time,
+            );
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  String _formatSubscribersCount(int count) {
+    if (count <= 0) return '0 подписчиков';
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    String word = 'подписчиков';
+    if (mod100 < 11 || mod100 > 14) {
+      if (mod10 == 1) {
+        word = 'подписчик';
+      } else if (mod10 >= 2 && mod10 <= 4) {
+        word = 'подписчика';
+      }
+    }
+    return '$count $word';
+  }
+
+  String _formatPostTime(String? dateStr) {
+    if (dateStr == null || dateStr.trim().isEmpty) return '';
+    try {
+      DateTime dt;
+      final trimmed = dateStr.trim();
+      if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+        final val = int.parse(trimmed);
+        if (val > 1000000000000) {
+          dt = DateTime.fromMillisecondsSinceEpoch(val).toLocal();
+        } else {
+          dt = DateTime.fromMillisecondsSinceEpoch(val * 1000).toLocal();
+        }
+      } else {
+        dt = DateTime.parse(trimmed).toLocal();
+      }
+
+      final now = DateTime.now();
+      final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+
+      if (isToday) {
+        return '$hour:$minute';
+      }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
+      if (isYesterday) {
+        return 'Вчера';
+      }
+
+      if (dt.year == now.year) {
+        const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        return '${dt.day} ${months[dt.month - 1]}';
+      } else {
+        final d = dt.day.toString().padLeft(2, '0');
+        final mo = dt.month.toString().padLeft(2, '0');
+        final y = (dt.year % 100).toString().padLeft(2, '0');
+        return '$d.$mo.$y';
+      }
+    } catch (_) {
+      if (dateStr.length <= 5 && dateStr.contains(':')) {
+        return dateStr.trim();
+      }
+      return '';
+    }
+  }
+
+  String _cleanPostText(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Нет публикаций';
+    if (trimmed.startsWith('[PORTAL_PHOTO]:')) {
+      try {
+        final jsonStr = trimmed.substring('[PORTAL_PHOTO]:'.length).trim();
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final caption = map['caption']?.toString() ?? '';
+        return caption.isNotEmpty ? '📷 $caption' : '📷 Фотография';
+      } catch (_) {
+        return '📷 Фотография';
+      }
+    }
+    if (trimmed.startsWith('[PORTAL_STICKER]:')) return 'Стикер';
+    if (trimmed.startsWith('[PORTAL_VOICE]:')) return '🎤 Голосовое сообщение';
+    return trimmed;
   }
 
   void _copyToClipboard(String text, String label) {
@@ -217,6 +398,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     final isCurrentUser = currentUserId != null &&
         (chat.id == currentUserId || chat.participantId == currentUserId || chat.isSaved);
     final user = isCurrentUser ? (authUser ?? _userProfile) : _userProfile;
+
+    // Resolve channel pinned to this profile
+    final effectiveChannelId = isCurrentUser
+        ? (authUser?.pinnedChannelId ?? user?.pinnedChannelId)
+        : (user?.pinnedChannelId ?? _userProfile?.pinnedChannelId ?? chat.pinnedChannelId);
+
+    final chatProv = context.watch<ChatProvider>();
+    final channelFromProv = effectiveChannelId != null
+        ? chatProv.chats.where((c) => c.isChannel && c.id == effectiveChannelId).firstOrNull
+        : null;
+    final displayChannel = channelFromProv ?? _pinnedChannel;
+
+    if (displayChannel == null && effectiveChannelId != null && effectiveChannelId > 0 && _resolvedChannelId != effectiveChannelId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _resolvePinnedChannel(effectiveChannelId);
+      });
+    }
 
     // Resolve user data with chat fallbacks
     final displayName = user?.fullName.isNotEmpty == true ? user!.fullName : chat.title;
@@ -567,6 +765,144 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 ),
               ),
               const SizedBox(height: 18),
+
+              // ===============================================================
+              // PINNED CHANNEL CARD (После кнопок Написать и Звонок)
+              // ===============================================================
+              if (displayChannel != null) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Над плашкой: слева "КАНАЛ", справа "(кол-во) подписчиков"
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'КАНАЛ',
+                              style: TextStyle(
+                                fontFamily: AppTheme.fontDisplay,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: Color(0xFF8E8E93),
+                              ),
+                            ),
+                            Text(
+                              _formatSubscribersCount(displayChannel.subscribersCount),
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontText,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF8E8E93),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Сама скругленная плашка
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                TelegramChatRoute(
+                                  builder: (_) => ChatScreen(chat: displayChannel),
+                                ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Слева аватарка канала
+                                  AvatarWidget(
+                                    avatarUrl: displayChannel.avatar,
+                                    title: displayChannel.title,
+                                    size: 46,
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  // Около аватарки: название канала + галочка, снизу текст последнего поста
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                displayChannel.title,
+                                                style: const TextStyle(
+                                                  fontFamily: AppTheme.fontDisplay,
+                                                  fontSize: 15.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (displayChannel.isVerified) ...[
+                                              const SizedBox(width: 5),
+                                              VerificationBadge(
+                                                verification: displayChannel.effectiveVerification,
+                                                size: 15,
+                                              ),
+                                            ],
+                                            const SizedBox(width: 8),
+                                            // В правом верхнем углу время отправки последнего поста
+                                            Text(
+                                              _formatPostTime(displayChannel.lastMessageTime),
+                                              style: const TextStyle(
+                                                fontFamily: AppTheme.fontText,
+                                                fontSize: 12.5,
+                                                color: Color(0xFF8E8E93),
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _cleanPostText(displayChannel.lastMessageText),
+                                          style: const TextStyle(
+                                            fontFamily: AppTheme.fontText,
+                                            fontSize: 13.5,
+                                            color: Color(0xFF929292),
+                                            height: 1.25,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+              ],
 
               // ===============================================================
               // GROUPED CARD 1: О СЕБЕ / ИМЯ ПОЛЬЗОВАТЕЛЯ / ТЕЛЕФОН (Graphite)
