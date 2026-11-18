@@ -765,6 +765,23 @@ class DatabaseHelper {
     });
   }
 
+  // Получение отдельного чата по ID
+  Future<Chat?> getChat(int chatId) async {
+    try {
+      final db = await instance.database;
+      final result = await db.query(
+        'chats',
+        where: 'id = ?',
+        whereArgs: [chatId],
+        limit: 1,
+      );
+      if (result.isNotEmpty) {
+        return Chat.fromMap(result.first);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // Получение списка чатов (закрепленные вверху, затем по времени последнего сообщения)
   Future<List<Chat>> getChats() async {
     final db = await instance.database;

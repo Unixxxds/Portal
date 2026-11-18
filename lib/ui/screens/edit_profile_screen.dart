@@ -921,10 +921,14 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                               ElevatedButton.icon(
                                 onPressed: () {
                                   Navigator.pop(ctx);
+                                  final isPrem = context.read<AuthProvider>().currentUser?.isPremium ?? false;
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => const CreateChannelScreen(),
+                                      builder: (_) => CreateChannelScreen(
+                                        ownedCount: myChannels.length,
+                                        maxChannels: isPrem ? 100 : 5,
+                                      ),
                                     ),
                                   );
                                 },

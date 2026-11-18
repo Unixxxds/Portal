@@ -60,6 +60,7 @@ class User {
   }
 
   bool get isDev => effectiveVerification == 'dev';
+  bool get isArtist => effectiveVerification == 'artist';
 
   int get sparksBalance => sparks;
 

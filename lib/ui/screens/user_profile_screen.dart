@@ -402,7 +402,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     // Resolve channel pinned to this profile
     final effectiveChannelId = isCurrentUser
         ? (authUser?.pinnedChannelId ?? user?.pinnedChannelId)
-        : (user?.pinnedChannelId ?? _userProfile?.pinnedChannelId ?? chat.pinnedChannelId);
+        : (user?.pinnedChannelId ?? _userProfile?.pinnedChannelId);
 
     final chatProv = context.watch<ChatProvider>();
     final channelFromProv = effectiveChannelId != null
@@ -808,13 +808,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                       Container(
                         decoration: BoxDecoration(
                           color: const Color(0xFF191919),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(26),
                           border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
+                            borderRadius: BorderRadius.circular(26),
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -1069,7 +1070,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                                 ),
                               ),
                               TextSpan(
-                                text: 'Этот аккаунт подтверждён представителями Portal как официальный',
+                                text: verification == 'dev'
+                                    ? 'Официальный аккаунт разработчиков Portal'
+                                    : (verification == 'artist'
+                                        ? 'Этот аккаунт подтверждён как профиль официального художника Portal'
+                                        : 'Этот аккаунт подтверждён представителями Portal как официальный'),
                                 style: TextStyle(
                                   fontFamily: AppTheme.fontText,
                                   fontSize: 12.5,

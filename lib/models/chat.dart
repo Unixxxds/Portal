@@ -78,6 +78,10 @@ class Chat {
     return effectiveVerification == 'dev';
   }
 
+  bool get isArtist {
+    return effectiveVerification == 'artist';
+  }
+
   String get lastMessageDate => lastMessageTime;
   bool get isSaved =>
       type == 'saved' ||

@@ -1042,13 +1042,14 @@ class _ProfileTabState extends State<ProfileTab> {
                       Container(
                         decoration: BoxDecoration(
                           color: const Color(0xFF191919),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(26),
                           border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
+                            borderRadius: BorderRadius.circular(26),
                             onTap: () {
                               Navigator.push(
                                 context,
