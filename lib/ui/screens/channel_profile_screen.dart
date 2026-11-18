@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:lottie/lottie.dart';
 
 import '../../core/constants.dart';
 import '../theme.dart';
@@ -35,6 +36,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   int? _ownerId;
   bool _isOwner = false;
   String _liveVerification = 'none';
+  int _channelArtifacts = 0;
 
   List<String> _channelPhotos = [];
   bool _isLoadingPhotos = true;
@@ -43,10 +45,11 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   void initState() {
     super.initState();
     _currentChat = widget.chat;
-    _subscribersCount = widget.chat.subscribersCount ?? 0;
+    _subscribersCount = widget.chat.subscribersCount;
     _isSubscribed = widget.chat.isSubscribed;
     _ownerId = widget.chat.ownerId;
     _liveVerification = widget.chat.effectiveVerification;
+    _channelArtifacts = widget.chat.artifacts;
 
     _checkOwner();
     _loadChannelDetails();
@@ -94,6 +97,11 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
           if (ownerId != null) {
             _ownerId = ownerId;
           }
+          if (data['artifacts'] != null) {
+            _channelArtifacts = data['artifacts'] is int
+                ? data['artifacts'] as int
+                : int.tryParse(data['artifacts'].toString()) ?? _channelArtifacts;
+          }
           _isOwner = isOwner;
           _liveVerification = cleanVerif;
 
@@ -105,6 +113,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
             subscribersCount: _subscribersCount,
             isSubscribed: _isSubscribed,
             verification: cleanVerif,
+            artifacts: _channelArtifacts,
           );
         });
 
@@ -324,8 +333,8 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                     // Center Channel Avatar
                     GestureDetector(
                       onTap: () {
-                        if (_currentChat.avatar != null && _currentChat.avatar!.isNotEmpty) {
-                          FullscreenGalleryViewer.show(context, imageUrls: [_currentChat.avatar!], initialIndex: 0);
+                        if (_currentChat.avatar.isNotEmpty) {
+                          FullscreenGalleryViewer.show(context, imageUrls: [_currentChat.avatar], initialIndex: 0);
                         }
                       },
                       child: Center(
@@ -504,6 +513,75 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                         ],
                       ),
                     ),
+
+                    if (_isOwner) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C1C1E),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0x1AFFFFFF),
+                            width: 1.0,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C2C2E),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Lottie.asset(
+                                    'lib/assets/material/artefact.json',
+                                    repeat: true,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            const Text(
+                              'Баланс артефактов',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: AppTheme.fontDisplay,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C2C2E),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0x22FFFFFF),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                '$_channelArtifacts',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  fontFamily: AppTheme.fontDisplay,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 20),
 

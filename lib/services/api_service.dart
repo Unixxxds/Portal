@@ -597,6 +597,22 @@ class ApiService {
     }
   }
 
+  // 13.0 Подарить артефакт каналу
+  Future<Map<String, dynamic>> giftArtifactToChannel(int chatId) async {
+    try {
+      final response = await _dio.post('/api/channels/$chatId/gift-artifact');
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return {'success': true};
+    } on DioException catch (e) {
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ?? e.response!.data['message'] ?? e.message)
+          : e.message;
+      throw Exception(msg ?? 'Не удалось передать артефакт');
+    }
+  }
+
   // 13.1 Проверка доступности имени пользователя канала
   Future<bool> checkChannelUsername(String username) async {
     final clean = username.trim().replaceFirst(RegExp(r'^@+'), '');

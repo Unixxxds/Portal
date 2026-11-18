@@ -1143,6 +1143,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           SendGiftModal.show(
                             context,
                             chat: widget.chat,
+                            recipientId: widget.chat.participantId ?? widget.chat.id,
+                            recipientUsername: widget.chat.title,
                             onGiftSent: (newGift) {
                               if (mounted) {
                                 _loadGifts();
@@ -1659,6 +1661,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 SendGiftModal.show(
                   context,
                   chat: widget.chat,
+                  recipientId: widget.chat.participantId ?? widget.chat.id,
+                  recipientUsername: widget.chat.title,
                   onGiftSent: (newGift) {
                     if (mounted) {
                       _loadGifts();

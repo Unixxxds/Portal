@@ -440,6 +440,23 @@ class ChatProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> giftArtifactToChannel(int chatId) async {
+    final res = await ApiService.instance.giftArtifactToChannel(chatId);
+    if (res['success'] == true) {
+      final newArtifacts = res['channelArtifacts'] is int
+          ? res['channelArtifacts'] as int
+          : int.tryParse(res['channelArtifacts']?.toString() ?? '');
+      if (newArtifacts != null) {
+        final idx = _chats.indexWhere((c) => c.id == chatId);
+        if (idx != -1) {
+          _chats[idx] = _chats[idx].copyWith(artifacts: newArtifacts);
+          notifyListeners();
+        }
+      }
+    }
+    return res;
+  }
+
   Future<void> loadPinnedMessage(int chatId) async {
     try {
       final res = await ApiService.instance.getPinnedMessage(chatId);
@@ -1264,6 +1281,25 @@ class ChatProvider with ChangeNotifier {
           _messagesByChat.remove(chatId);
           await DatabaseHelper.instance.deleteChat(chatId);
           notifyListeners();
+        }
+        break;
+
+      case 'channel_updated':
+        final chatId = event['chat_id'] is int
+            ? event['chat_id'] as int
+            : int.tryParse(event['chat_id']?.toString() ?? '') ??
+                (event['chatId'] is int ? event['chatId'] as int : int.tryParse(event['chatId']?.toString() ?? '') ?? 0);
+        final artifacts = event['artifacts'] is int
+            ? event['artifacts'] as int
+            : int.tryParse(event['artifacts']?.toString() ?? '');
+        if (chatId > 0) {
+          final idx = _chats.indexWhere((c) => c.id == chatId);
+          if (idx != -1) {
+            _chats[idx] = _chats[idx].copyWith(
+              artifacts: artifacts ?? _chats[idx].artifacts,
+            );
+            notifyListeners();
+          }
         }
         break;
 

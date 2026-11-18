@@ -23,6 +23,7 @@ class Chat {
   final List<String> secondaryUsernames;
   final int subscribersCount;
   final bool isSubscribed;
+  final int artifacts;
 
   Chat({
     required this.id,
@@ -47,6 +48,7 @@ class Chat {
     this.secondaryUsernames = const [],
     this.subscribersCount = 0,
     this.isSubscribed = false,
+    this.artifacts = 0,
   });
 
   String get effectiveVerification {
@@ -159,6 +161,7 @@ class Chat {
     List<String>? secondaryUsernames,
     int? subscribersCount,
     bool? isSubscribed,
+    int? artifacts,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -183,6 +186,7 @@ class Chat {
       secondaryUsernames: secondaryUsernames ?? this.secondaryUsernames,
       subscribersCount: subscribersCount ?? this.subscribersCount,
       isSubscribed: isSubscribed ?? this.isSubscribed,
+      artifacts: artifacts ?? this.artifacts,
     );
   }
 
@@ -291,6 +295,9 @@ class Chat {
           ? json['subscribers_count'] as int
           : int.tryParse(json['subscribers_count']?.toString() ?? '') ?? 0,
       isSubscribed: json['is_subscribed'] == 1 || json['is_subscribed'] == true,
+      artifacts: json['artifacts'] is int
+          ? json['artifacts'] as int
+          : int.tryParse(json['artifacts']?.toString() ?? '') ?? 0,
     );
   }
 
@@ -317,6 +324,7 @@ class Chat {
       'is_premium': isPremium ? 1 : 0,
       'subscribers_count': subscribersCount,
       'is_subscribed': isSubscribed ? 1 : 0,
+      'artifacts': artifacts,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -349,6 +357,7 @@ class Chat {
       isPremium: (map['is_premium'] as int? ?? 0) == 1,
       subscribersCount: map['subscribers_count'] as int? ?? 0,
       isSubscribed: (map['is_subscribed'] as int? ?? 0) == 1,
+      artifacts: map['artifacts'] as int? ?? 0,
     );
   }
 }

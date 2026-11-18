@@ -14,13 +14,14 @@ class TelegramMessageContextMenu extends StatefulWidget {
   final bool isCurrentlyPinned;
   final List<MessageReaction> reactions;
   final int currentUserId;
-  final VoidCallback onReply;
-  final VoidCallback onCopy;
-  final VoidCallback onPin;
-  final VoidCallback onForward;
+  final bool showActionsMenu;
+  final VoidCallback? onReply;
+  final VoidCallback? onCopy;
+  final VoidCallback? onPin;
+  final VoidCallback? onForward;
   final VoidCallback? onEdit;
-  final VoidCallback onDelete;
-  final VoidCallback onSelect;
+  final VoidCallback? onDelete;
+  final VoidCallback? onSelect;
   final ValueChanged<String> onReaction;
   final VoidCallback onOpenCustomEmojiPicker;
 
@@ -33,13 +34,14 @@ class TelegramMessageContextMenu extends StatefulWidget {
     required this.isCurrentlyPinned,
     required this.reactions,
     required this.currentUserId,
-    required this.onReply,
-    required this.onCopy,
-    required this.onPin,
-    required this.onForward,
+    this.showActionsMenu = true,
+    this.onReply,
+    this.onCopy,
+    this.onPin,
+    this.onForward,
     this.onEdit,
-    required this.onDelete,
-    required this.onSelect,
+    this.onDelete,
+    this.onSelect,
     required this.onReaction,
     required this.onOpenCustomEmojiPicker,
   });
@@ -53,13 +55,14 @@ class TelegramMessageContextMenu extends StatefulWidget {
     required bool isCurrentlyPinned,
     required List<MessageReaction> reactions,
     required int currentUserId,
-    required VoidCallback onReply,
-    required VoidCallback onCopy,
-    required VoidCallback onPin,
-    required VoidCallback onForward,
+    bool showActionsMenu = true,
+    VoidCallback? onReply,
+    VoidCallback? onCopy,
+    VoidCallback? onPin,
+    VoidCallback? onForward,
     VoidCallback? onEdit,
-    required VoidCallback onDelete,
-    required VoidCallback onSelect,
+    VoidCallback? onDelete,
+    VoidCallback? onSelect,
     required ValueChanged<String> onReaction,
     required VoidCallback onOpenCustomEmojiPicker,
   }) {
@@ -79,6 +82,7 @@ class TelegramMessageContextMenu extends StatefulWidget {
             isCurrentlyPinned: isCurrentlyPinned,
             reactions: reactions,
             currentUserId: currentUserId,
+            showActionsMenu: showActionsMenu,
             onReply: onReply,
             onCopy: onCopy,
             onPin: onPin,
@@ -246,7 +250,7 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
 
     // Height of menu
     final int itemCount = widget.isMe ? 7 : 6;
-    final double menuHeight = (itemCount * 44.0) + 14.0;
+    final double menuHeight = widget.showActionsMenu ? ((itemCount * 44.0) + 14.0) : 0.0;
 
     // Safe margins
     final double topLimit = padding.top + 60.0;
@@ -405,22 +409,23 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                 ],
 
                 // 4. ACTION CONTEXT MENU (BOTTOM - Translucent Frosted Glass)
-                Positioned(
-                  left: menuLeft,
-                  top: menuTop,
-                  width: menuWidth,
-                  child: SlideTransition(
-                    position: _menuSlide,
-                    child: Transform.scale(
-                      scale: _menuScale.value,
-                      alignment: widget.isMe ? Alignment.topRight : Alignment.topLeft,
-                      child: Opacity(
-                        opacity: _menuFade.value,
-                        child: _buildFrostedActionMenuCard(context),
+                if (widget.showActionsMenu)
+                  Positioned(
+                    left: menuLeft,
+                    top: menuTop,
+                    width: menuWidth,
+                    child: SlideTransition(
+                      position: _menuSlide,
+                      child: Transform.scale(
+                        scale: _menuScale.value,
+                        alignment: widget.isMe ? Alignment.topRight : Alignment.topLeft,
+                        child: Opacity(
+                          opacity: _menuFade.value,
+                          child: _buildFrostedActionMenuCard(context),
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             );
           },
@@ -558,33 +563,37 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
             mainAxisSize: MainAxisSize.min,
             children: [
               // 1. Ответить
-              _buildActionItem(
-                icon: Icons.reply_rounded,
-                title: 'Ответить',
-                onTap: () => _close(widget.onReply),
-              ),
+              if (widget.onReply != null)
+                _buildActionItem(
+                  icon: Icons.reply_rounded,
+                  title: 'Ответить',
+                  onTap: () => _close(widget.onReply!),
+                ),
 
               // 2. Скопировать
-              _buildActionItem(
-                icon: Icons.copy_rounded,
-                title: 'Скопировать',
-                onTap: () => _close(widget.onCopy),
-              ),
+              if (widget.onCopy != null)
+                _buildActionItem(
+                  icon: Icons.copy_rounded,
+                  title: 'Скопировать',
+                  onTap: () => _close(widget.onCopy!),
+                ),
 
               // 3. Закрепить / Открепить
-              _buildActionItem(
-                icon: Icons.push_pin_outlined,
-                title: widget.isCurrentlyPinned ? 'Открепить' : 'Закрепить',
-                onTap: () => _close(widget.onPin),
-              ),
+              if (widget.onPin != null)
+                _buildActionItem(
+                  icon: Icons.push_pin_outlined,
+                  title: widget.isCurrentlyPinned ? 'Открепить' : 'Закрепить',
+                  onTap: () => _close(widget.onPin!),
+                ),
 
               // 4. Переслать
-              _buildActionItem(
-                icon: Icons.reply_rounded,
-                flipIcon: true,
-                title: 'Переслать',
-                onTap: () => _close(widget.onForward),
-              ),
+              if (widget.onForward != null)
+                _buildActionItem(
+                  icon: Icons.reply_rounded,
+                  flipIcon: true,
+                  title: 'Переслать',
+                  onTap: () => _close(widget.onForward!),
+                ),
 
               // 5. Редактировать (если сообщение пользователя)
               if (widget.isMe && widget.onEdit != null)
@@ -595,26 +604,29 @@ class _TelegramMessageContextMenuState extends State<TelegramMessageContextMenu>
                 ),
 
               // 6. Удалить
-              _buildActionItem(
-                icon: Icons.delete_outline_rounded,
-                title: 'Удалить',
-                isDestructive: true,
-                onTap: () => _close(widget.onDelete),
-              ),
+              if (widget.onDelete != null)
+                _buildActionItem(
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Удалить',
+                  isDestructive: true,
+                  onTap: () => _close(widget.onDelete!),
+                ),
 
               // Divider
-              Container(
-                height: 0.6,
-                color: const Color(0x1FFFFFFF),
-                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-              ),
+              if (widget.onSelect != null) ...[
+                Container(
+                  height: 0.6,
+                  color: const Color(0x1FFFFFFF),
+                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+                ),
 
-              // 7. Выбрать
-              _buildActionItem(
-                icon: Icons.check_circle_outline_rounded,
-                title: 'Выбрать',
-                onTap: () => _close(widget.onSelect),
-              ),
+                // 7. Выбрать
+                _buildActionItem(
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Выбрать',
+                  onTap: () => _close(widget.onSelect!),
+                ),
+              ],
             ],
           ),
         ),

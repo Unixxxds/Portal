@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -22,6 +23,7 @@ class AuthProvider with ChangeNotifier {
 
   String? _cloudTempToken;
   String? _cloudPasswordHint;
+  StreamSubscription? _wsSub;
 
   AuthStatus get status => _status;
   AuthStep get step => _step;
@@ -47,6 +49,7 @@ class AuthProvider with ChangeNotifier {
         _status = AuthStatus.authenticated;
         await MultiAccountService.instance.init(currentUser: _currentUser, currentToken: token);
         WebSocketService.instance.connect();
+        _listenWs();
         // Refresh full profile & real Sparks balance from database asynchronously
         refreshCurrentUser();
       } else {
@@ -289,6 +292,24 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  void deductArtifacts(int amount) {
+    if (_currentUser != null) {
+      final current = _currentUser!.artifacts;
+      final updated = (current - amount) < 0 ? 0 : (current - amount);
+      _currentUser = _currentUser!.copyWith(artifacts: updated);
+      notifyListeners();
+      DatabaseHelper.instance.updateUserProfile(_currentUser!);
+    }
+  }
+
+  void setArtifacts(int artifacts) {
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(artifacts: artifacts);
+      notifyListeners();
+      DatabaseHelper.instance.updateUserProfile(_currentUser!);
+    }
+  }
+
   Future<void> refreshCurrentUser() async {
     try {
       final res = await ApiService.instance.getMe();
@@ -381,5 +402,32 @@ class AuthProvider with ChangeNotifier {
     _step = AuthStep.email;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
+  }
+
+  void _listenWs() {
+    _wsSub?.cancel();
+    _wsSub = WebSocketService.instance.events.listen((event) {
+      if (event['type'] == 'user_profile_updated') {
+        final userId = event['userId'] is int
+            ? event['userId'] as int
+            : int.tryParse(event['userId']?.toString() ?? '');
+        if (_currentUser != null && (_currentUser!.id == userId || userId == null)) {
+          if (event['artifacts'] != null) {
+            final art = event['artifacts'] is int
+                ? event['artifacts'] as int
+                : int.tryParse(event['artifacts'].toString()) ?? _currentUser!.artifacts;
+            _currentUser = _currentUser!.copyWith(artifacts: art);
+            notifyListeners();
+            DatabaseHelper.instance.updateUserProfile(_currentUser!);
+          }
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.cancel();
+    super.dispose();
   }
 }

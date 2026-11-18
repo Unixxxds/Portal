@@ -12,6 +12,7 @@ import '../../core/constants.dart';
 import '../../core/user_activity_helper.dart';
 import '../../models/chat.dart';
 import '../../models/message.dart';
+import '../../models/message_reaction.dart';
 import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -95,6 +96,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final Animation<double> _sendBtnScaleAnim;
   late final Animation<Offset> _sendBtnArrowSlideAnim;
 
+  // Header capsule bounce animation on artifact impact
+  late final AnimationController _headerBounceController;
+  late final Animation<double> _headerBounceAnimation;
+
   // Attachment paperclip button progress notifier (0.0 = закрыто, 1.0 = half, 2.0 = full)
   final ValueNotifier<double> _pickerProgress = ValueNotifier<double>(0.0);
 
@@ -132,6 +137,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       TweenSequenceItem(tween: Tween(begin: Offset.zero, end: const Offset(0.0, -0.35)), weight: 50),
       TweenSequenceItem(tween: Tween(begin: const Offset(0.0, 0.25), end: Offset.zero), weight: 50),
     ]).animate(CurvedAnimation(parent: _sendBtnAnimController, curve: Curves.easeInOut));
+
+    _headerBounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _headerBounceAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.16)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.16, end: 0.92)
+            .chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.92, end: 1.05)
+            .chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.05, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutQuad)),
+        weight: 20,
+      ),
+    ]).animate(_headerBounceController);
 
     // Предзагрузка фото в фоне сразу при входе в чат (0 мс ожидания при клике на скрепку)
     GalleryService.instance.preload();
@@ -294,6 +326,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _rippleController.dispose();
     _blinkController.dispose();
     _sendBtnAnimController.dispose();
+    _headerBounceController.dispose();
     _pickerProgress.dispose();
     super.dispose();
   }
@@ -1142,7 +1175,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   // 2. Centered Maximally Rounded Floating Capsule Pill
                   Align(
                     alignment: Alignment.center,
-                    child: GestureDetector(
+                    child: ScaleTransition(
+                      scale: _headerBounceAnimation,
+                      child: GestureDetector(
                       onTap: () {
                         if (chat.isChannel) {
                           _showChannelInfoModal(context, chat);
@@ -1270,6 +1305,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
+                ),
 
                   // 3. Actions (Right)
                   Align(
@@ -1305,7 +1341,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ),
                               const SizedBox(width: 8),
                               GestureDetector(
-                                onTap: () => _showChannelInfoModal(context, chat),
+                                onTap: () => _showChannelMoreMenu(context, chat),
                                 child: Container(
                                   width: 40,
                                   height: 40,
@@ -1428,7 +1464,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // ===========================================================================
-  // CHANNEL PROFILE SCREEN
+  // CHANNEL PROFILE SCREEN & CHANNEL MENU
   // ===========================================================================
   void _showChannelInfoModal(BuildContext context, Chat chat) {
     Navigator.push(
@@ -1436,6 +1472,194 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       TelegramProfileRoute(
         builder: (_) => ChannelProfileScreen(chat: chat),
       ),
+    );
+  }
+
+  void _showChannelMoreMenu(BuildContext context, Chat chat) {
+    HapticFeedback.lightImpact();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'ChannelMenu',
+      barrierColor: Colors.black.withOpacity(0.55),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, anim1, anim2) {
+        final topPadding = MediaQuery.of(ctx).padding.top + 58;
+        return Material(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => Navigator.of(ctx).pop(),
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Positioned(
+                top: topPadding,
+                right: 14,
+                child: FadeTransition(
+                  opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut),
+                  child: ScaleTransition(
+                    scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+                    alignment: Alignment.topRight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Container(
+                          width: 240,
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC1A1A1C),
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: const Color(0x2EFFFFFF),
+                              width: 1.0,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.45),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              InkWell(
+                                onTap: () {
+                                  Navigator.of(ctx).pop();
+                                  _showGiftArtifactModal(context, chat);
+                                },
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: Lottie.asset(
+                                          'lib/assets/material/artefact.json',
+                                          repeat: true,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Expanded(
+                                        child: Text(
+                                          'Подарить Артефакт',
+                                          style: TextStyle(
+                                            fontFamily: AppTheme.fontDisplay,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const Divider(height: 1, color: Color(0x1FFFFFFF), indent: 16, endIndent: 16),
+                              InkWell(
+                                onTap: () {
+                                  Navigator.of(ctx).pop();
+                                  _showChannelInfoModal(context, chat);
+                                },
+                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Информация о канале',
+                                          style: TextStyle(
+                                            fontFamily: AppTheme.fontText,
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _triggerArtifactFlightAnimation() {
+    final overlayState = Overlay.of(context);
+    final topPadding = MediaQuery.of(context).padding.top;
+    final screenSize = MediaQuery.of(context).size;
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _FlyingArtifactOverlay(
+        screenSize: screenSize,
+        topPadding: topPadding,
+        onImpact: () {
+          if (mounted) {
+            _headerBounceController.forward(from: 0.0);
+            HapticFeedback.heavyImpact();
+          }
+        },
+        onCompleted: () {
+          try {
+            entry.remove();
+          } catch (_) {}
+        },
+      ),
+    );
+
+    overlayState.insert(entry);
+  }
+
+  void _showGiftArtifactModal(BuildContext context, Chat chat) {
+    HapticFeedback.lightImpact();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'GiftArtifactDialog',
+      barrierColor: Colors.black.withOpacity(0.7),
+      transitionDuration: const Duration(milliseconds: 250),
+      transitionBuilder: (ctx, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+          child: FadeTransition(
+            opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (dialogContext, _, __) {
+        return _GiftArtifactModal(
+          chat: chat,
+          parentContext: context,
+          onGiftTriggered: _triggerArtifactFlightAnimation,
+        );
+      },
     );
   }
 
@@ -1468,10 +1692,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ? _liveAvatar!
         : widget.chat.avatar;
 
-    return GestureDetector(
-      onLongPress: () => _showMessageContextMenu(msg),
-      onSecondaryTap: () => _showMessageContextMenu(msg),
-      child: Container(
+    Widget buildCardWidget() {
+      return Container(
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1646,9 +1868,72 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
-    ),
+    );
+  }
+
+  return Builder(
+    builder: (cardContext) {
+      final cardWidget = buildCardWidget();
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showChannelPostContextMenu(msg, cardContext, cardWidget),
+        onSecondaryTap: () => _showChannelPostContextMenu(msg, cardContext, cardWidget),
+        child: cardWidget,
+      );
+    },
   );
 }
+
+  void _showChannelPostContextMenu(
+    Message msg,
+    BuildContext cardContext,
+    Widget cardWidget,
+  ) {
+    HapticFeedback.mediumImpact();
+    final chatProvider = context.read<ChatProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id ?? 0;
+    final currentUserName = authProvider.currentUser?.displayName ?? '';
+    final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
+
+    final screenSize = MediaQuery.of(context).size;
+    Rect bubbleRect;
+    final box = cardContext.findRenderObject() as RenderBox?;
+    if (box != null && box.attached && box.hasSize) {
+      bubbleRect = box.localToGlobal(Offset.zero) & box.size;
+    } else {
+      bubbleRect = Rect.fromCenter(
+        center: Offset(screenSize.width / 2, screenSize.height / 2),
+        width: screenSize.width - 20,
+        height: 200,
+      );
+    }
+
+    TelegramMessageContextMenu.show(
+      context: context,
+      message: msg,
+      bubbleRect: bubbleRect,
+      bubbleWidget: cardWidget,
+      isMe: false,
+      isCurrentlyPinned: false,
+      showActionsMenu: false,
+      reactions: chatProvider.getMessageReactions(msg.id),
+      currentUserId: currentUserId,
+      onReaction: (emoji) {
+        chatProvider.toggleReaction(
+          widget.chat.id,
+          msg.id,
+          emoji,
+          userId: currentUserId,
+          userName: currentUserName,
+          userAvatar: currentUserAvatar,
+        );
+      },
+      onOpenCustomEmojiPicker: () {
+        _showCustomReactionPicker(msg);
+      },
+    );
+  }
 
   Widget _buildPostContent(Message msg) {
     final text = msg.text.trim();
@@ -1775,56 +2060,104 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildPostReactions(Message msg) {
-    final textLower = msg.text.toLowerCase();
-    final hasReactions = msg.text.contains('🔥') ||
-        msg.text.contains('🚀') ||
-        textLower.contains('реакци') ||
-        textLower.contains('devil') ||
-        textLower.contains('обновлен');
-
-    if (!hasReactions) {
+    final chatProvider = context.watch<ChatProvider>();
+    final reactions = chatProvider.getMessageReactions(msg.id);
+    if (reactions.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id ?? 0;
+    final currentUserName = authProvider.currentUser?.displayName ?? '';
+    final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
+
+    // Group reactions by emoji
+    final Map<String, List<MessageReaction>> grouped = {};
+    for (final r in reactions) {
+      grouped.putIfAbsent(r.emoji, () => []).add(r);
+    }
+
+    // Sort descending by count: highest reaction count first
+    final sortedEntries = grouped.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: [
-          _buildReactionPill('🔥', 7),
-          _buildReactionPill('🚀', 5),
-        ],
+        children: sortedEntries.map((entry) {
+          final emoji = entry.key;
+          final count = entry.value.length;
+          final isMine = entry.value.any((r) => r.userId == currentUserId);
+
+          return _buildReactionPill(
+            emoji,
+            count,
+            isMine: isMine,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              chatProvider.toggleReaction(
+                widget.chat.id,
+                msg.id,
+                emoji,
+                userId: currentUserId,
+                userName: currentUserName,
+                userAvatar: currentUserAvatar,
+              );
+            },
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildReactionPill(String emoji, int count) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF262626),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: const Color(0x1AFFFFFF),
-          width: 0.8,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 13)),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: const TextStyle(
-              fontFamily: AppTheme.fontText,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
+  Widget _buildReactionPill(
+    String emoji,
+    int count, {
+    bool isMine = false,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isMine ? const Color(0xFF2B6DBE) : const Color(0xFF262626),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isMine ? const Color(0x66FFFFFF) : const Color(0x1AFFFFFF),
+            width: 0.8,
           ),
-        ],
+          boxShadow: isMine
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2B6DBE).withOpacity(0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 13.5)),
+            const SizedBox(width: 5),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontFamily: AppTheme.fontText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isMine ? Colors.white : Colors.white.withOpacity(0.9),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4733,4 +5066,456 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _showFullscreenGallery(List<String> imageUrls, int initialIndex) {
     FullscreenGalleryViewer.show(context, imageUrls: imageUrls, initialIndex: initialIndex);
   }
+}
+
+// ===========================================================================
+// GIFT ARTIFACT MODAL WIDGET
+// ===========================================================================
+class _GiftArtifactModal extends StatefulWidget {
+  final Chat chat;
+  final BuildContext parentContext;
+  final VoidCallback onGiftTriggered;
+
+  const _GiftArtifactModal({
+    required this.chat,
+    required this.parentContext,
+    required this.onGiftTriggered,
+  });
+
+  @override
+  State<_GiftArtifactModal> createState() => _GiftArtifactModalState();
+}
+
+class _GiftArtifactModalState extends State<_GiftArtifactModal> {
+  String _formatArtifacts(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod100 >= 11 && mod100 <= 19) return '$count артефактов';
+    if (mod10 == 1) return '$count артефакт';
+    if (mod10 >= 2 && mod10 <= 4) return '$count артефакта';
+    return '$count артефактов';
+  }
+
+  Future<void> _handleGift() async {
+    final auth = widget.parentContext.read<AuthProvider>();
+    final user = auth.currentUser;
+    final int currentArtifacts = user?.artifacts ?? 0;
+
+    if (currentArtifacts <= 0) {
+      HapticFeedback.vibrate();
+      ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'У вас нет артефактов. Оформите Premium подписку, чтобы получить 3 артефакта!',
+          ),
+          backgroundColor: const Color(0xFF2C2C2E),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
+
+    // 1. Trigger Telegram-style flight animation into header
+    widget.onGiftTriggered();
+
+    // 2. Close modal card smoothly
+    Navigator.of(context).pop();
+
+    // 3. Deduct locally and transfer on backend
+    final chatProvider = widget.parentContext.read<ChatProvider>();
+    auth.deductArtifacts(1);
+
+    try {
+      final res = await chatProvider.giftArtifactToChannel(widget.chat.id);
+      if (res['success'] != true) {
+        throw Exception(res['error'] ?? 'Ошибка передачи артефакта');
+      }
+    } catch (e) {
+      auth.setArtifacts(currentArtifacts);
+      if (widget.parentContext.mounted) {
+        ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: const Color(0xFFFF3B30),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = widget.parentContext.watch<AuthProvider>();
+    final int userArtifacts = auth.currentUser?.artifacts ?? 0;
+
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 340),
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xEB1A1A1C),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: const Color(0x22FFFFFF),
+                    width: 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.55),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Top Center Animated Logo
+                    SizedBox(
+                      width: 100,
+                      height: 100,
+                      child: Lottie.asset(
+                        'lib/assets/material/artefact.json',
+                        fit: BoxFit.contain,
+                        repeat: true,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Bold Title "Артефакт"
+                    const Text(
+                      'Артефакт',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontDisplay,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Description text
+                    const Text(
+                      'Артефакты дарятся для улучшения возможностей канала, даря его вы поможете авторам каналов стилизовать их',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 13.5,
+                        color: Color(0xFF9E9E9E),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Maximally rounded pill: "у вас (кол-во) артефактов"
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2C2C2E),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0x1AFFFFFF),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        'У вас ${_formatArtifacts(userArtifacts)}',
+                        style: const TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+
+                    // Long maximally rounded white button "Подарить"
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        onPressed: _handleGift,
+                        child: const Text(
+                          'Подарить',
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontDisplay,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// FLYING ARTIFACT OVERLAY ANIMATION (TELEGRAM-LEVEL POLISH)
+// ===========================================================================
+class _FlyingArtifactOverlay extends StatefulWidget {
+  final Size screenSize;
+  final double topPadding;
+  final VoidCallback onImpact;
+  final VoidCallback onCompleted;
+
+  const _FlyingArtifactOverlay({
+    required this.screenSize,
+    required this.topPadding,
+    required this.onImpact,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_FlyingArtifactOverlay> createState() => _FlyingArtifactOverlayState();
+}
+
+class _FlyingArtifactOverlayState extends State<_FlyingArtifactOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _impactTriggered = false;
+  late final List<_SparkleParticle> _particles;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1150),
+    );
+
+    final rnd = math.Random();
+    _particles = List.generate(24, (i) {
+      final angle = (i / 24) * 2 * math.pi + (rnd.nextDouble() - 0.5) * 0.35;
+      final speed = 40.0 + rnd.nextDouble() * 65.0;
+      final size = 2.5 + rnd.nextDouble() * 3.5;
+      final color = i % 3 == 0
+          ? const Color(0xFFFFD700)
+          : (i % 3 == 1 ? const Color(0xFF2990FF) : Colors.white);
+      return _SparkleParticle(
+        angle: angle,
+        speed: speed,
+        size: size,
+        color: color,
+      );
+    });
+
+    _controller.addListener(() {
+      if (_controller.value >= 0.70 && !_impactTriggered) {
+        _impactTriggered = true;
+        widget.onImpact();
+      }
+    });
+
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onCompleted();
+      }
+    });
+
+    // Slight initial anticipation haptic
+    HapticFeedback.mediumImpact();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final startY = widget.screenSize.height / 2 - 70;
+    final startX = widget.screenSize.width / 2;
+    final targetY = widget.topPadding + 29;
+    final targetX = widget.screenSize.width / 2;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+
+        double currentX = startX;
+        double currentY = startY;
+        double currentScale = 1.0;
+        double currentOpacity = 1.0;
+        double rotation = 0.0;
+
+        if (t < 0.20) {
+          // Phase 1: Recoil / Anticipation (Отдача назад с усадкой)
+          final progress = t / 0.20;
+          final eased = Curves.easeOutQuad.transform(progress);
+          currentY = startY + (36.0 * math.sin(eased * math.pi / 2));
+          currentScale = 1.0 - (0.16 * math.sin(eased * math.pi / 2));
+          currentOpacity = 1.0;
+        } else if (t < 0.70) {
+          // Phase 2: Launch into the header
+          final progress = (t - 0.20) / (0.70 - 0.20);
+          final eased = Curves.easeInOutCubic.transform(progress);
+          final recoilY = startY + 36.0;
+          currentY = recoilY + (targetY - recoilY) * eased;
+          currentScale = 0.84 + (0.34 - 0.84) * eased;
+          rotation = math.sin(progress * math.pi * 2) * 0.14;
+          currentOpacity = 1.0;
+        } else {
+          // Phase 3: Impact with header capsule and dissolve
+          final progress = ((t - 0.70) / (1.0 - 0.70)).clamp(0.0, 1.0);
+          currentY = targetY;
+          currentScale = 0.34 * (1.0 - progress);
+          currentOpacity = (1.0 - progress * 2.2).clamp(0.0, 1.0);
+        }
+
+        return Stack(
+          children: [
+            // Shockwave & Particles at Target Header Capsule on Impact (t >= 0.68)
+            if (t >= 0.68)
+              Positioned(
+                left: targetX - 70,
+                top: targetY - 70,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    size: const Size(140, 140),
+                    painter: _ImpactShockwavePainter(
+                      progress: ((t - 0.68) / 0.32).clamp(0.0, 1.0),
+                      particles: _particles,
+                    ),
+                  ),
+                ),
+              ),
+
+            // The flying Lottie Artifact
+            if (currentOpacity > 0.01)
+              Positioned(
+                left: currentX - (50 * currentScale),
+                top: currentY - (50 * currentScale),
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: currentOpacity,
+                    child: Transform.rotate(
+                      angle: rotation,
+                      child: Transform.scale(
+                        scale: currentScale,
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0x662990FF),
+                                blurRadius: 28 * currentScale,
+                                spreadRadius: 4 * currentScale,
+                              ),
+                              BoxShadow(
+                                color: const Color(0x44FFFFFF),
+                                blurRadius: 18 * currentScale,
+                              ),
+                            ],
+                          ),
+                          child: Lottie.asset(
+                            'lib/assets/material/artefact.json',
+                            fit: BoxFit.contain,
+                            repeat: true,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SparkleParticle {
+  final double angle;
+  final double speed;
+  final double size;
+  final Color color;
+
+  _SparkleParticle({
+    required this.angle,
+    required this.speed,
+    required this.size,
+    required this.color,
+  });
+}
+
+class _ImpactShockwavePainter extends CustomPainter {
+  final double progress;
+  final List<_SparkleParticle> particles;
+
+  _ImpactShockwavePainter({
+    required this.progress,
+    required this.particles,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final ringRadius = 14.0 + (56.0 * Curves.easeOutCubic.transform(progress));
+    final ringOpacity = (1.0 - progress).clamp(0.0, 1.0);
+
+    // Glowing expanding shockwave rings
+    final ringPaint = Paint()
+      ..color = const Color(0xCC2990FF).withOpacity(ringOpacity * 0.75)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * (1.0 - progress * 0.6);
+    canvas.drawCircle(center, ringRadius, ringPaint);
+
+    final innerRingPaint = Paint()
+      ..color = Colors.white.withOpacity(ringOpacity * 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawCircle(center, ringRadius * 0.72, innerRingPaint);
+
+    // Sparkle particles flying outwards with deceleration
+    for (final p in particles) {
+      final dist = p.speed * Curves.easeOutQuad.transform(progress);
+      final px = center.dx + math.cos(p.angle) * dist;
+      final py = center.dy + math.sin(p.angle) * dist;
+      final pAlpha = (1.0 - progress).clamp(0.0, 1.0);
+      final pPaint = Paint()
+        ..color = p.color.withOpacity(pAlpha)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(px, py), p.size * (1.0 - progress * 0.5), pPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ImpactShockwavePainter oldDelegate) => true;
 }

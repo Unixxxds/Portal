@@ -102,6 +102,7 @@ class DatabaseHelper {
             phone TEXT,
             email TEXT,
             sparks INTEGER DEFAULT 250,
+            artifacts INTEGER DEFAULT 0,
             is_premium INTEGER DEFAULT 0,
             verification TEXT DEFAULT 'none',
             is_online INTEGER DEFAULT 0,
@@ -132,6 +133,7 @@ class DatabaseHelper {
             phone TEXT,
             username TEXT,
             verification TEXT,
+            artifacts INTEGER DEFAULT 0,
             updated_at TEXT
           );
         ''');
@@ -276,6 +278,9 @@ class DatabaseHelper {
       if (!chatCols.contains('is_premium')) {
         await db.execute("ALTER TABLE chats ADD COLUMN is_premium INTEGER DEFAULT 0;");
       }
+      if (!chatCols.contains('artifacts')) {
+        await db.execute("ALTER TABLE chats ADD COLUMN artifacts INTEGER DEFAULT 0;");
+      }
 
       final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
           .map((e) => e['name']?.toString())
@@ -294,6 +299,9 @@ class DatabaseHelper {
       }
       if (!userCols.contains('sparks')) {
         await db.execute("ALTER TABLE users ADD COLUMN sparks INTEGER DEFAULT 250;");
+      }
+      if (!userCols.contains('artifacts')) {
+        await db.execute("ALTER TABLE users ADD COLUMN artifacts INTEGER DEFAULT 0;");
       }
       if (!userCols.contains('is_premium')) {
         await db.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0;");

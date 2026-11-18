@@ -9,6 +9,7 @@ class User {
   final String? phone;
   final String? email;
   final int sparks;
+  final int artifacts;
   final bool isPremium;
   final String verification;
   final bool isOnline;
@@ -27,6 +28,7 @@ class User {
     this.phone,
     this.email,
     this.sparks = 250,
+    this.artifacts = 0,
     this.isPremium = false,
     this.verification = 'none',
     this.isOnline = false,
@@ -76,6 +78,7 @@ class User {
       phone: json['phone']?.toString() ?? json['phone_number']?.toString() ?? json['phoneNumber']?.toString(),
       email: json['email']?.toString(),
       sparks: json['sparks'] is int ? json['sparks'] : int.tryParse(json['sparks']?.toString() ?? '250') ?? 250,
+      artifacts: json['artifacts'] is int ? json['artifacts'] : int.tryParse(json['artifacts']?.toString() ?? '0') ?? 0,
       isPremium: json['is_premium'] == true || json['is_premium'] == 1,
       verification: json['verification']?.toString() ?? 'none',
       isOnline: json['is_online'] == true || json['is_online'] == 1,
@@ -117,6 +120,7 @@ class User {
       'phone': phone ?? '',
       'email': email ?? '',
       'sparks': sparks,
+      'artifacts': artifacts,
       'is_premium': isPremium ? 1 : 0,
       'verification': verification,
       'is_online': isOnline ? 1 : 0,
@@ -133,6 +137,9 @@ class User {
 
     final rawSparks = map['sparks'];
     final parsedSparks = rawSparks is int ? rawSparks : (int.tryParse(rawSparks?.toString() ?? '250') ?? 250);
+
+    final rawArtifacts = map['artifacts'];
+    final parsedArtifacts = rawArtifacts is int ? rawArtifacts : (int.tryParse(rawArtifacts?.toString() ?? '0') ?? 0);
 
     final rawPremium = map['is_premium'];
     final isPrem = rawPremium == 1 || rawPremium == true || rawPremium == '1';
@@ -154,6 +161,7 @@ class User {
       phone: map['phone']?.toString(),
       email: map['email']?.toString(),
       sparks: parsedSparks,
+      artifacts: parsedArtifacts,
       isPremium: isPrem,
       verification: map['verification']?.toString() ?? 'none',
       isOnline: isOnlineVal,
@@ -180,6 +188,7 @@ class User {
     String? phone,
     String? email,
     int? sparks,
+    int? artifacts,
     bool? isPremium,
     String? verification,
     bool? isOnline,
@@ -199,6 +208,7 @@ class User {
       phone: phone ?? this.phone,
       email: email ?? this.email,
       sparks: sparks ?? this.sparks,
+      artifacts: artifacts ?? this.artifacts,
       isPremium: isPremium ?? this.isPremium,
       verification: verification ?? this.verification,
       isOnline: isOnline ?? this.isOnline,
