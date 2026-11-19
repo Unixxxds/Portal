@@ -51,4 +51,7 @@ app.*.map.json
 *.log
 flutter.txt
 фоны.txt
+serviceAccountKey.json
+*serviceAccountKey*.json
+/server/
 

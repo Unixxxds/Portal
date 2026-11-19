@@ -9,6 +9,7 @@ import '../data/database_helper.dart';
 import '../services/api_service.dart';
 import '../services/multi_account_service.dart';
 import '../services/websocket_service.dart';
+import '../services/push_notification_service.dart';
 import 'chat_provider.dart';
 
 enum AuthStatus { initial, checking, authenticated, unauthenticated }
@@ -52,6 +53,7 @@ class AuthProvider with ChangeNotifier {
         _listenWs();
         // Refresh full profile & real Sparks balance from database asynchronously
         refreshCurrentUser();
+        PushNotificationService.instance.requestPermissionAndRegister();
       } else {
         _status = AuthStatus.unauthenticated;
         await MultiAccountService.instance.init();
@@ -393,6 +395,7 @@ class AuthProvider with ChangeNotifier {
     }
 
     WebSocketService.instance.disconnect();
+    PushNotificationService.instance.unregister();
     await SecureStorageService.instance.clearAll();
     await DatabaseHelper.instance.clearAll();
     if (activeId != null) {

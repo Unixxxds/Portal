@@ -11,7 +11,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/api_service.dart';
 import '../theme.dart';
-import 'gift_visuals.dart';
 
 class CatalogGiftItem {
   final String id;

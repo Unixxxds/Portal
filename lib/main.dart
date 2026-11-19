@@ -3,15 +3,21 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'services/media_cache_service.dart';
+import 'services/push_notification_service.dart';
 import 'ui/theme.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/main_screen.dart';
+
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Background pre-warming of gift assets & disk cache
   MediaCacheService.instance.precacheGifts();
+
+  // Initialize push notification system
+  await PushNotificationService.instance.init(navKey: rootNavigatorKey);
 
   runApp(
     MultiProvider(
@@ -30,6 +36,7 @@ class PortalApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Portal',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
@@ -38,8 +45,22 @@ class PortalApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _askedPermission = false;
+
+  void _checkAndRequestPush() {
+    if (!_askedPermission) {
+      _askedPermission = true;
+      PushNotificationService.instance.requestPermissionAndRegister();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +100,8 @@ class AuthGate extends StatelessWidget {
         );
 
       case AuthStatus.authenticated:
+        // As requested: prompt user for push notifications as soon as they enter the app!
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndRequestPush());
         return const MainScreen();
 
       case AuthStatus.unauthenticated:

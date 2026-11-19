@@ -930,5 +930,27 @@ class ApiService {
     }
     return {'success': true, 'data': payload};
   }
+
+  // Регистрация FCM push-токена устройства на бэкенде
+  Future<bool> registerFcmToken(String token) async {
+    try {
+      final res = await _dio.post('/api/users/fcm-token', data: {'token': token});
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (e) {
+      debugPrint('ApiService.registerFcmToken error: $e');
+      return false;
+    }
+  }
+
+  // Удаление FCM push-токена при выходе
+  Future<bool> deleteFcmToken(String token) async {
+    try {
+      final res = await _dio.delete('/api/users/fcm-token', data: {'token': token});
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('ApiService.deleteFcmToken error: $e');
+      return false;
+    }
+  }
 }
 
