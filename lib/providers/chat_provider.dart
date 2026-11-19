@@ -940,6 +940,15 @@ class ChatProvider with ChangeNotifier {
     return true;
   }
 
+  Future<void> removeChatLocally(int chatId) async {
+    _chats.removeWhere((c) => c.id == chatId);
+    _messagesByChat.remove(chatId);
+    _sortChats();
+    notifyListeners();
+
+    await DatabaseHelper.instance.deleteChat(chatId);
+  }
+
   Future<void> deleteChat(int chatId) async {
     _chats.removeWhere((c) => c.id == chatId);
     _messagesByChat.remove(chatId);

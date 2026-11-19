@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/chat.dart';
@@ -11,6 +13,7 @@ import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
 import '../widgets/formatted_message_text.dart';
+import '../widgets/portal_emoji_picker.dart';
 import '../widgets/telegram_text_selection_toolbar.dart';
 
 class PostCommentsScreen extends StatefulWidget {
@@ -32,15 +35,22 @@ class PostCommentsScreen extends StatefulWidget {
 class _PostCommentsScreenState extends State<PostCommentsScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
   List<PostComment> _comments = [];
   bool _isLoading = true;
   bool _isSending = false;
+  bool _showEmojiPicker = false;
   int _viewsCount = 1;
 
   @override
   void initState() {
     super.initState();
     _viewsCount = widget.post.viewsCount > 0 ? widget.post.viewsCount : 1;
+    _focusNode.addListener(() {
+      if (_focusNode.hasFocus && _showEmojiPicker) {
+        setState(() => _showEmojiPicker = false);
+      }
+    });
     _loadComments();
     _registerPostView();
   }
@@ -60,9 +70,99 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _toggleEmojiPicker() {
+    if (_showEmojiPicker) {
+      setState(() => _showEmojiPicker = false);
+      _focusNode.requestFocus();
+    } else {
+      _focusNode.unfocus();
+      setState(() => _showEmojiPicker = true);
+    }
+  }
+
+  void _handleEmojiSelected(String emoji) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    final newText = text.replaceRange(start, end, emoji);
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
+    );
+    setState(() {});
+  }
+
+  void _handleEmojiBackspace() {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    if (text.isEmpty) return;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    if (start > 0 && start == end) {
+      final before = Characters(text.substring(0, start));
+      final dropped = before.skipLast(1).toString();
+      final after = text.substring(end);
+      _textController.value = TextEditingValue(
+        text: dropped + after,
+        selection: TextSelection.collapsed(offset: dropped.length),
+      );
+    } else if (start != end) {
+      final newText = text.replaceRange(start, end, '');
+      _textController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: start),
+      );
+    }
+    setState(() {});
+  }
+
+  Future<void> _sendStickerComment(String assetPath) async {
+    final payload = '[PORTAL_STICKER]:{"asset":"$assetPath"}';
+    final auth = context.read<AuthProvider>();
+    final currentUser = auth.currentUser;
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final optimisticComment = PostComment(
+      id: tempId,
+      messageId: widget.post.id,
+      userId: currentUser?.id ?? 0,
+      text: payload,
+      createdAt: DateTime.now().toIso8601String(),
+      firstName: currentUser?.firstName ?? '',
+      lastName: currentUser?.lastName ?? '',
+      username: currentUser?.username ?? '',
+      avatar: currentUser?.avatar ?? '',
+      verification: currentUser?.effectiveVerification ?? 'none',
+      isPremium: currentUser?.isPremium ?? false,
+    );
+
+    setState(() {
+      _comments.add(optimisticComment);
+      _showEmojiPicker = false;
+    });
+    _scrollToBottom();
+    widget.onCommentsCountChanged?.call(_comments.length);
+
+    try {
+      final res = await ApiService.instance.sendPostComment(widget.post.id, payload);
+      if (res['comment'] is Map<String, dynamic>) {
+        final serverComment = PostComment.fromJson(Map<String, dynamic>.from(res['comment'] as Map));
+        if (mounted) {
+          setState(() {
+            final idx = _comments.indexWhere((c) => c.id == tempId);
+            if (idx != -1) {
+              _comments[idx] = serverComment;
+            }
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadComments() async {
@@ -227,365 +327,354 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
     final rawTitle = channel.title.startsWith('📢') ? channel.title.substring(1).trim() : channel.title;
     final channelTitle = rawTitle.isEmpty ? 'Канал' : rawTitle;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF090909),
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_showEmojiPicker,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _showEmojiPicker) {
+          setState(() => _showEmojiPicker = false);
+        }
+      },
+      child: Scaffold(
         backgroundColor: const Color(0xFF090909),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leadingWidth: 44,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            AvatarWidget(
-              avatarUrl: channel.avatar,
-              title: channelTitle,
-              size: 38,
-              isChannel: true,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          channelTitle,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontDisplay,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ),
-                      if (channel.isVerified) ...[
-                        const SizedBox(width: 5),
-                        VerificationBadge(
-                          verification: channel.effectiveVerification,
-                          size: 16,
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    _getSubtitleText(),
-                    style: const TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF929292),
-                    ),
-                  ),
-                ],
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF090909),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leadingWidth: 44,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => Navigator.pop(context),
+          ),
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              AvatarWidget(
+                avatarUrl: channel.avatar,
+                title: channelTitle,
+                size: 38,
+                isChannel: true,
               ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded, color: Color(0xFF929292), size: 22),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF929292), size: 22),
-            onPressed: () {},
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // =================================================================
-            // COMMENTS & ROOT POST BODY
-            // =================================================================
-            Expanded(
-              child: RefreshIndicator(
-                color: Colors.white,
-                backgroundColor: const Color(0xFF191919),
-                onRefresh: _loadComments,
-                child: ListView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Centered Date Badge
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0x33000000),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: const Color(0x14FFFFFF), width: 0.8),
-                        ),
-                        child: Text(
-                          _formatDate(post.createdAt),
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFB0B0B0),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // =========================================================
-                    // ROOT POST CARD (Reference Post)
-                    // =========================================================
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF191919),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: const Color(0x1AFFFFFF),
-                          width: 1.0,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.35),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Channel title row
-                          Row(
-                            children: [
-                              Text(
-                                channelTitle,
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontDisplay,
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              if (channel.isVerified) ...[
-                                const SizedBox(width: 5),
-                                VerificationBadge(
-                                  verification: channel.effectiveVerification,
-                                  size: 14,
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-
-                          // Post content
-                          _buildRootPostContent(post),
-                          const SizedBox(height: 8),
-
-                          // Post footer meta row: Views, Share, Time
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              const Icon(Icons.remove_red_eye_outlined, size: 14, color: Color(0xFF929292)),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatViewsCount(_viewsCount),
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 11.5,
-                                  color: Color(0xFF929292),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              const Icon(Icons.near_me_rounded, size: 14, color: Color(0xFF929292)),
-                              const SizedBox(width: 10),
-                              Text(
-                                _formatTime(post.createdAt),
-                                style: const TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 11.5,
-                                  color: Color(0xFF929292),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // =========================================================
-                    // COMMENTS LIST OR EMPTY PILL
-                    // =========================================================
-                    if (_isLoading && _comments.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        ),
-                      )
-                    else if (_comments.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: const Color(0x33000000),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: const Color(0x14FFFFFF), width: 0.8),
-                            ),
-                            child: const Text(
-                              'Комментариев пока нет...',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF929292),
-                              ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            channelTitle,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontDisplay,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.3,
                             ),
                           ),
                         ),
-                      )
-                    else
-                      ..._comments.map((comment) => _buildCommentItem(comment, currentUser?.id)),
+                        if (channel.isVerified) ...[
+                          const SizedBox(width: 5),
+                          VerificationBadge(
+                            verification: channel.effectiveVerification,
+                            size: 16,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      _getSubtitleText(),
+                      style: const TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF929292),
+                      ),
+                    ),
                   ],
                 ),
               ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.search_rounded, color: Color(0xFF929292), size: 22),
+              onPressed: () {},
             ),
+            IconButton(
+              icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF929292), size: 22),
+              onPressed: () {},
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // =================================================================
+              // COMMENTS & ROOT POST BODY
+              // =================================================================
+              Expanded(
+                child: RefreshIndicator(
+                  color: Colors.white,
+                  backgroundColor: const Color(0xFF191919),
+                  onRefresh: _loadComments,
+                  child: ListView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+                    children: [
+                      // Centered Date Badge
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0x33000000),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0x14FFFFFF), width: 0.8),
+                          ),
+                          child: Text(
+                            _formatDate(post.createdAt),
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFB0B0B0),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
 
-            // =================================================================
-            // BOTTOM INPUT BAR (Matching messenger style)
-            // =================================================================
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFF090909),
-                border: Border(
-                  top: BorderSide(color: Color(0x14FFFFFF), width: 0.8),
+                      // =========================================================
+                      // ROOT POST CARD (Reference Post)
+                      // =========================================================
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0x1AFFFFFF),
+                            width: 1.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.35),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Channel title row
+                            Row(
+                              children: [
+                                Text(
+                                  channelTitle,
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                if (channel.isVerified) ...[
+                                  const SizedBox(width: 5),
+                                  VerificationBadge(
+                                    verification: channel.effectiveVerification,
+                                    size: 14,
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+
+                            // Post content
+                            _buildRootPostContent(post),
+                            const SizedBox(height: 8),
+
+                            // Post footer meta row: Views, Share, Time
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                const Icon(Icons.remove_red_eye_outlined, size: 14, color: Color(0xFF929292)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _formatViewsCount(_viewsCount),
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 11.5,
+                                    color: Color(0xFF929292),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Icon(Icons.near_me_rounded, size: 14, color: Color(0xFF929292)),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _formatTime(post.createdAt),
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 11.5,
+                                    color: Color(0xFF929292),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // =========================================================
+                      // COMMENTS LIST OR EMPTY PILL
+                      // =========================================================
+                      if (_isLoading && _comments.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          ),
+                        )
+                      else if (_comments.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: const Color(0x33000000),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: const Color(0x14FFFFFF), width: 0.8),
+                              ),
+                              child: const Text(
+                                'Комментариев пока нет...',
+                                style: TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF929292),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        ..._comments.map((comment) => _buildCommentItem(comment, currentUser?.id)),
+                    ],
+                  ),
                 ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Attachment / Paperclip button
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: IconButton(
+
+              // =================================================================
+              // BOTTOM INPUT BAR (Matching messenger style)
+              // =================================================================
+              Container(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF090909),
+                  border: Border(
+                    top: BorderSide(color: Color(0x14FFFFFF), width: 0.8),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Attachment / Paperclip button
+                    IconButton(
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF929292), size: 24),
                       onPressed: () {},
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 6),
 
-                  // Current user avatar preview
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: AvatarWidget(
+                    // Current user avatar preview
+                    AvatarWidget(
                       size: 28,
                       avatarUrl: currentUser?.avatar ?? '',
                       title: currentUser?.displayName ?? 'Я',
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 8),
 
-                  // Input pill
-                  Expanded(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 140),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.bottomCenter,
+                    // Input pill
+                    Expanded(
                       child: Container(
                         constraints: const BoxConstraints(
-                          minHeight: 44,
-                          maxHeight: 130,
+                          minHeight: 38,
+                          maxHeight: 110,
                         ),
-                        padding: const EdgeInsets.only(left: 14, right: 6),
+                        padding: const EdgeInsets.only(left: 14, right: 4),
                         decoration: BoxDecoration(
                           color: const Color(0xFF191919),
-                          borderRadius: BorderRadius.circular(22),
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                         ),
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
-                                child: TextField(
-                                  controller: _textController,
-                                  contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
-                                  keyboardType: TextInputType.multiline,
-                                  textCapitalization: TextCapitalization.sentences,
-                                  minLines: 1,
-                                  maxLines: 5,
-                                  textInputAction: TextInputAction.newline,
-                                  scrollPhysics: const BouncingScrollPhysics(),
-                                  onChanged: (_) => setState(() {}),
-                                  style: const TextStyle(
+                              child: TextField(
+                                controller: _textController,
+                                focusNode: _focusNode,
+                                contextMenuBuilder: TelegramTextSelectionToolbar.buildToolbar,
+                                keyboardType: TextInputType.multiline,
+                                textCapitalization: TextCapitalization.sentences,
+                                minLines: 1,
+                                maxLines: 4,
+                                textInputAction: TextInputAction.newline,
+                                scrollPhysics: const BouncingScrollPhysics(),
+                                textAlignVertical: TextAlignVertical.center,
+                                onChanged: (_) => setState(() {}),
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontText,
+                                  color: Colors.white,
+                                  fontSize: 14.5,
+                                  height: 1.25,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: 'Сообщение...',
+                                  hintStyle: TextStyle(
                                     fontFamily: AppTheme.fontText,
-                                    color: Colors.white,
+                                    color: Color(0xFF929292),
                                     fontSize: 14.5,
-                                    height: 1.35,
+                                    height: 1.25,
                                   ),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Сообщение...',
-                                    hintStyle: TextStyle(
-                                      fontFamily: AppTheme.fontText,
-                                      color: Color(0xFF929292),
-                                      fontSize: 14.5,
-                                      height: 1.35,
-                                    ),
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(vertical: 8),
-                                  ),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 8),
                                 ),
                               ),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: const Icon(
-                                  Icons.sentiment_satisfied_rounded,
-                                  color: Color(0xFF929292),
-                                  size: 20,
-                                ),
-                                onPressed: () {},
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              icon: Icon(
+                                Icons.sentiment_satisfied_rounded,
+                                color: _showEmojiPicker ? const Color(0xFF3B98FF) : const Color(0xFF929292),
+                                size: 22,
                               ),
+                              onPressed: _toggleEmojiPicker,
                             ),
-                            const SizedBox(width: 4),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
 
-                  // Send button or mic
-                  if (hasText)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: GestureDetector(
+                    // Send button (only when there is text, NO mic icon)
+                    if (hasText) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
                         onTap: _isSending ? null : _sendComment,
                         child: Container(
-                          width: 40,
-                          height: 40,
+                          width: 38,
+                          height: 38,
                           decoration: const BoxDecoration(
                             color: Color(0xFF3B98FF),
                             shape: BoxShape.circle,
@@ -605,18 +694,19 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                           ),
                         ),
                       ),
-                    )
-                  else
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.mic_rounded, color: Color(0xFF929292), size: 24),
-                      onPressed: () {},
-                    ),
-                ],
+                    ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              if (_showEmojiPicker)
+                PortalEmojiPicker(
+                  onEmojiSelected: _handleEmojiSelected,
+                  onBackspacePressed: _handleEmojiBackspace,
+                  onStickerSelected: _sendStickerComment,
+                  bottomPadding: MediaQuery.of(context).padding.bottom,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -649,6 +739,41 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
             ),
           ),
         ],
+      );
+    }
+
+    if (text.startsWith('[PORTAL_STICKER]:') || text.contains('[PORTAL_STICKER]:')) {
+      String assetPath = 'lib/assets/sticker/sticker.gif';
+      try {
+        final startIdx = text.indexOf('{');
+        final endIdx = text.lastIndexOf('}');
+        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+          final jsonStr = text.substring(startIdx, endIdx + 1);
+          final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+          if (map['asset'] != null && map['asset'].toString().isNotEmpty) {
+            assetPath = map['asset'].toString();
+          }
+        }
+      } catch (_) {}
+
+      final isNetwork = assetPath.startsWith('http://') || assetPath.startsWith('https://');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: isNetwork
+              ? CachedNetworkImage(
+                  imageUrl: assetPath,
+                  width: 150,
+                  height: 150,
+                  fit: BoxFit.contain,
+                )
+              : Image.asset(
+                  assetPath,
+                  width: 150,
+                  height: 150,
+                  fit: BoxFit.contain,
+                ),
+        ),
       );
     }
 
@@ -734,17 +859,52 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                   ),
                   const SizedBox(height: 4),
 
-                  // Comment text
-                  FormattedMessageText(
-                    text: comment.text,
-                    messageId: comment.id,
-                    style: const TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      color: Colors.white,
-                      fontSize: 14,
-                      height: 1.3,
-                    ),
-                  ),
+                  // Comment text or sticker
+                  comment.text.trim().startsWith('[PORTAL_STICKER]:') || comment.text.contains('[PORTAL_STICKER]:')
+                      ? Builder(
+                          builder: (context) {
+                            String assetPath = 'lib/assets/sticker/sticker.gif';
+                            try {
+                              final raw = comment.text.trim();
+                              final startIdx = raw.indexOf('{');
+                              final endIdx = raw.lastIndexOf('}');
+                              if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+                                final jsonStr = raw.substring(startIdx, endIdx + 1);
+                                final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+                                if (map['asset'] != null && map['asset'].toString().isNotEmpty) {
+                                  assetPath = map['asset'].toString();
+                                }
+                              }
+                            } catch (_) {}
+                            final isNetwork = assetPath.startsWith('http://') || assetPath.startsWith('https://');
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: isNetwork
+                                  ? CachedNetworkImage(
+                                      imageUrl: assetPath,
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.contain,
+                                    )
+                                  : Image.asset(
+                                      assetPath,
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.contain,
+                                    ),
+                            );
+                          },
+                        )
+                      : FormattedMessageText(
+                          text: comment.text,
+                          messageId: comment.id,
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            color: Colors.white,
+                            fontSize: 14,
+                            height: 1.3,
+                          ),
+                        ),
                 ],
               ),
             ),

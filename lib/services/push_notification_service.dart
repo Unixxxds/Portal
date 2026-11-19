@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -40,6 +42,11 @@ class PushNotificationService {
   Future<void> init({GlobalKey<NavigatorState>? navKey}) async {
     if (_isInitialized) return;
     navigatorKey = navKey;
+
+    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) {
+      _isInitialized = true;
+      return;
+    }
 
     try {
       await Firebase.initializeApp();
@@ -122,6 +129,9 @@ class PushNotificationService {
 
   /// Запрос разрешения на уведомления сразу при входе юзера в приложение
   Future<bool> requestPermissionAndRegister() async {
+    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) {
+      return false;
+    }
     try {
       // 1. Android 13+ (POST_NOTIFICATIONS) and iOS Permission
       final permStatus = await Permission.notification.request();
@@ -160,6 +170,7 @@ class PushNotificationService {
     }
   }
 
+  // ignore: unused_element
   void _showLocalNotification(RemoteMessage message) {
     final notification = message.notification;
     final title = notification?.title ?? message.data['title'] ?? 'Portal';

@@ -222,24 +222,53 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
 
   Future<void> _toggleSubscription() async {
     final willSubscribe = !_isSubscribed;
+    if (!willSubscribe) {
+      try {
+        await ApiService.instance.toggleChannelSubscription(_currentChat.id, true);
+        if (!mounted) return;
+        await context.read<ChatProvider>().removeChatLocally(_currentChat.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Вы отписались от канала'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка: $e')),
+          );
+        }
+      }
+      return;
+    }
+
     setState(() {
-      _isSubscribed = willSubscribe;
-      _subscribersCount += willSubscribe ? 1 : -1;
-      if (_subscribersCount < 0) _subscribersCount = 0;
+      _isSubscribed = true;
+      _subscribersCount += 1;
     });
 
     try {
-      final res = await ApiService.instance.toggleChannelSubscription(_currentChat.id, !willSubscribe);
+      final res = await ApiService.instance.toggleChannelSubscription(_currentChat.id, false);
       if (res['is_subscribed'] != null && mounted) {
         final actual = res['is_subscribed'] == 1 || res['is_subscribed'] == true;
         setState(() => _isSubscribed = actual);
       }
+      if (mounted) {
+        final updatedChat = _currentChat.copyWith(
+          isSubscribed: true,
+          subscribersCount: _subscribersCount,
+        );
+        await context.read<ChatProvider>().addOrUpdateChat(updatedChat);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _isSubscribed = !willSubscribe;
-          _subscribersCount += willSubscribe ? -1 : 1;
-          if (_subscribersCount < 0) _subscribersCount = 0;
+          _isSubscribed = false;
+          _subscribersCount = _subscribersCount <= 0 ? 0 : _subscribersCount - 1;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка: $e')),

@@ -616,7 +616,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx != -1 && _scrollController.hasClients) {
       final max = _scrollController.position.maxScrollExtent;
-      final target = (idx / (messages.length > 0 ? messages.length : 1)) * max;
+      final target = (idx / (messages.isNotEmpty ? messages.length : 1)) * max;
       _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 350),
@@ -725,7 +725,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: Scaffold(
         extendBodyBehindAppBar: true,
         backgroundColor: AppTheme.appBg,
-        appBar: _buildLiquidGlassHeader(isTyping, currentChat, isOnline),
+        appBar: _buildLiquidGlassHeader(isTyping, currentChat, isOnline, isChannelOwner),
         body: Stack(
           children: [
             Column(
@@ -1090,7 +1090,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ===========================================================================
   // FLOATING CAPSULE HEADER (NO BLACK UNDERLAY)
   // ===========================================================================
-  PreferredSizeWidget _buildLiquidGlassHeader(bool isTyping, Chat chat, bool isOnline) {
+  PreferredSizeWidget _buildLiquidGlassHeader(bool isTyping, Chat chat, bool isOnline, bool isChannelOwner) {
     final statusText = isTyping
         ? 'печатает...'
         : (chat.isChannel
@@ -1194,7 +1194,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         height: 46,
                         constraints: BoxConstraints(
                           minWidth: 140,
-                          maxWidth: MediaQuery.of(context).size.width - (chat.isChannel ? 180 : 124),
+                          maxWidth: MediaQuery.of(context).size.width - (chat.isChannel ? (isChannelOwner ? 180 : 124) : 124),
                         ),
                         padding: const EdgeInsets.fromLTRB(5, 4, 14, 4),
                         decoration: BoxDecoration(
@@ -1314,32 +1314,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ? Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              GestureDetector(
-                                onTap: () => _showChannelInfoModal(context, chat),
-                                child: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF191919),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0x1AFFFFFF),
-                                      width: 1.0,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.35),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 3),
+                              if (isChannelOwner) ...[
+                                GestureDetector(
+                                  onTap: () => _showChannelInfoModal(context, chat),
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF191919),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0x1AFFFFFF),
+                                        width: 1.0,
                                       ),
-                                    ],
-                                  ),
-                                  child: const Center(
-                                    child: Icon(Icons.edit_outlined, color: Colors.white, size: 18),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.35),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(Icons.edit_outlined, color: Colors.white, size: 18),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
+                                const SizedBox(width: 8),
+                              ],
                               GestureDetector(
                                 onTap: () => _showChannelMoreMenu(context, chat),
                                 child: Container(
@@ -1896,6 +1898,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final currentUserName = authProvider.currentUser?.displayName ?? '';
     final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
 
+    final currentChat = chatProvider.chats.firstWhere(
+      (c) => c.isChannel == widget.chat.isChannel && c.id == widget.chat.id,
+      orElse: () => widget.chat,
+    );
+    final isChannelOwner = currentChat.isChannel &&
+        (_canPostToChannel ||
+         (currentUserId > 0 &&
+          ((_channelOwnerId != null && _channelOwnerId == currentUserId) ||
+           (currentChat.ownerId != null && currentChat.ownerId == currentUserId) ||
+           (widget.chat.ownerId != null && widget.chat.ownerId == currentUserId))));
+
+    String cleanText = msg.text;
+    if (_isGiftMessage(cleanText)) {
+      cleanText = 'Подарок';
+    } else if (cleanText.startsWith('[PORTAL_PHOTO]:')) {
+      try {
+        final jsonStr = cleanText.substring('[PORTAL_PHOTO]:'.length).trim();
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final caption = map['caption']?.toString() ?? '';
+        cleanText = caption.isNotEmpty ? caption : 'Фотография';
+      } catch (_) {
+        cleanText = 'Фотография';
+      }
+    } else if (cleanText.startsWith('[PORTAL_STICKER]:')) {
+      cleanText = 'Стикер';
+    }
+
     final screenSize = MediaQuery.of(context).size;
     Rect bubbleRect;
     final box = cardContext.findRenderObject() as RenderBox?;
@@ -1914,11 +1943,40 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       message: msg,
       bubbleRect: bubbleRect,
       bubbleWidget: cardWidget,
-      isMe: false,
+      isMe: isChannelOwner,
       isCurrentlyPinned: false,
-      showActionsMenu: false,
+      showActionsMenu: isChannelOwner,
       reactions: chatProvider.getMessageReactions(msg.id),
       currentUserId: currentUserId,
+      onCopy: () {
+        Clipboard.setData(ClipboardData(text: cleanText));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Текст скопирован'),
+            duration: Duration(milliseconds: 1400),
+            backgroundColor: Color(0xFF191919),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      onEdit: isChannelOwner
+          ? () {
+              setState(() {
+                _editingMessage = msg;
+                _replyingToMessage = null;
+                _textController.text = cleanText;
+                _textController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _textController.text.length),
+                );
+              });
+              _textFocusNode.requestFocus();
+            }
+          : null,
+      onDelete: isChannelOwner
+          ? () {
+              chatProvider.deleteMessage(widget.chat.id, msg.id);
+            }
+          : null,
       onReaction: (emoji) {
         chatProvider.toggleReaction(
           widget.chat.id,
@@ -2042,6 +2100,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // 2. Gift in Channel Post
     if (_isGiftMessage(text) || text.contains('[PORTAL_GIFT]:')) {
       return _buildPortalGiftBubble(msg, false);
+    }
+
+    // 3. Sticker in Channel Post
+    if (text.startsWith('[PORTAL_STICKER]:') || text.contains('[PORTAL_STICKER]:')) {
+      String assetPath = 'lib/assets/sticker/sticker.gif';
+      try {
+        final startIdx = text.indexOf('{');
+        final endIdx = text.lastIndexOf('}');
+        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+          final jsonStr = text.substring(startIdx, endIdx + 1);
+          final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+          if (map['asset'] != null && map['asset'].toString().isNotEmpty) {
+            assetPath = map['asset'].toString();
+          }
+        }
+      } catch (_) {}
+
+      final isNetwork = assetPath.startsWith('http://') || assetPath.startsWith('https://');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: isNetwork
+              ? CachedNetworkImage(
+                  imageUrl: assetPath,
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.contain,
+                )
+              : Image.asset(
+                  assetPath,
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.contain,
+                ),
+        ),
+      );
     }
 
     return FormattedMessageText(
@@ -2222,33 +2316,63 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     setState(() => _isSubscribing = true);
 
     final nextSub = !_isSubscribed;
-    final delta = nextSub ? 1 : -1;
-    final nextCount = (_subscribersCount + delta) < 0 ? 0 : (_subscribersCount + delta);
 
-    setState(() {
-      _isSubscribed = nextSub;
-      _subscribersCount = nextCount;
-    });
-
-    try {
-      await ApiService.instance.toggleChannelSubscription(widget.chat.id, !nextSub);
-      final updatedChat = widget.chat.copyWith(
-        isSubscribed: nextSub,
-        subscribersCount: nextCount,
-      );
-      await context.read<ChatProvider>().addOrUpdateChat(updatedChat);
-      if (mounted) {
+    if (!nextSub) {
+      // Unsubscribe & leave channel: close screen and remove from chats list
+      try {
+        await ApiService.instance.toggleChannelSubscription(widget.chat.id, true);
+        if (!mounted) return;
+        await context.read<ChatProvider>().removeChatLocally(widget.chat.id);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(nextSub ? 'Вы подписались на канал' : 'Вы отписались от канала'),
+            content: const Text('Вы отписались от канала'),
             duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
+        Navigator.of(context).pop();
+      } catch (e) {
+        debugPrint('Subscription unsubscribe error: $e');
+        if (mounted) {
+          setState(() => _isSubscribing = false);
+        }
       }
+      return;
+    }
+
+    final nextCount = _subscribersCount + 1;
+    setState(() {
+      _isSubscribed = true;
+      _subscribersCount = nextCount;
+    });
+
+    try {
+      await ApiService.instance.toggleChannelSubscription(widget.chat.id, false);
+      if (!mounted) return;
+      final updatedChat = widget.chat.copyWith(
+        isSubscribed: true,
+        subscribersCount: nextCount,
+      );
+      await context.read<ChatProvider>().addOrUpdateChat(updatedChat);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Вы подписались на канал'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
     } catch (e) {
       debugPrint('Subscription toggle error: $e');
+      if (mounted) {
+        setState(() {
+          _isSubscribed = false;
+          _subscribersCount = _subscribersCount <= 0 ? 0 : _subscribersCount - 1;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubscribing = false);
