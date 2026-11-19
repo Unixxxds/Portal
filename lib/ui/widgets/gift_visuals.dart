@@ -831,22 +831,26 @@ class GiftModelWidget extends StatelessWidget {
     final path = gift.assetPath;
 
     if (gift.isImage) {
-      return Image.asset(
+      return RepaintBoundary(
+        child: Image.asset(
+          path,
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _buildFallback(),
+        ),
+      );
+    }
+
+    return RepaintBoundary(
+      child: Lottie.asset(
         path,
         width: size,
         height: size,
         fit: BoxFit.contain,
+        animate: animate,
         errorBuilder: (_, __, ___) => _buildFallback(),
-      );
-    }
-
-    return Lottie.asset(
-      path,
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      animate: animate,
-      errorBuilder: (_, __, ___) => _buildFallback(),
+      ),
     );
   }
 

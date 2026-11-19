@@ -165,18 +165,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     ]).animate(_headerBounceController);
 
-    // Предзагрузка фото в фоне сразу при входе в чат (0 мс ожидания при клике на скрепку)
-    GalleryService.instance.preload();
+    // Предзагрузка фото только после завершения анимации перехода в чат (устраняет фризы)
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        GalleryService.instance.preload();
+      }
+    });
 
     _rippleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat();
+    );
 
     _blinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
+    );
     _blinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(_blinkController);
     _isSubscribed = widget.chat.isSubscribed;
     _subscribersCount = widget.chat.subscribersCount;
@@ -205,9 +209,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       );
       if (mounted) {
         _jumpToBottomFast();
-        Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
-        Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
-        Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
+        Future.delayed(const Duration(milliseconds: 150), _jumpToBottomFast);
       }
     });
 
@@ -505,6 +507,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       HapticFeedback.mediumImpact();
 
+      _rippleController.repeat();
+      _blinkController.repeat(reverse: true);
+
       setState(() {
         _isRecordingVoice = true;
         _recordElapsedMs = 0;
@@ -512,13 +517,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       });
 
       _recordTimer?.cancel();
-      _recordTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
+      _recordTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
         if (!mounted || !_isRecordingVoice) {
           timer.cancel();
           return;
         }
         setState(() {
-          _recordElapsedMs += 25;
+          _recordElapsedMs += 100;
         });
       });
     } catch (e) {
@@ -541,6 +546,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     _recordTimer?.cancel();
     _recordTimer = null;
+
+    _rippleController.stop();
+    _rippleController.reset();
+    _blinkController.stop();
+    _blinkController.reset();
 
     setState(() {
       _isRecordingVoice = false;
@@ -679,9 +689,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _jumpToBottomFast();
           if (wasInitial) {
-            Future.delayed(const Duration(milliseconds: 60), _jumpToBottomFast);
-            Future.delayed(const Duration(milliseconds: 180), _jumpToBottomFast);
-            Future.delayed(const Duration(milliseconds: 350), _jumpToBottomFast);
+            Future.delayed(const Duration(milliseconds: 120), _jumpToBottomFast);
           }
         });
       }
@@ -794,15 +802,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               );
 
                               if (showDate) {
-                                return Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildDateBadge(_formatDateBadge(msg.createdAt)),
-                                    cardWidget,
-                                  ],
+                                return RepaintBoundary(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildDateBadge(_formatDateBadge(msg.createdAt)),
+                                      cardWidget,
+                                    ],
+                                  ),
                                 );
                               }
-                              return cardWidget;
+                              return RepaintBoundary(
+                                child: cardWidget,
+                              );
                             },
                           ),
                         ),
@@ -913,28 +925,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
-              constraints: const BoxConstraints(maxWidth: 320),
-              decoration: BoxDecoration(
-                color: const Color(0x3312151D),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: const Color(0x1AFFFFFF),
-                  width: 1.0,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.25),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+          constraints: const BoxConstraints(maxWidth: 320),
+          decoration: BoxDecoration(
+            color: const Color(0xE6151720),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(
+              color: const Color(0x1AFFFFFF),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
               ),
+            ],
+          ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -979,8 +987,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   // ===========================================================================
@@ -1407,8 +1414,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   // ===========================================================================
@@ -2055,6 +2061,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               cacheManager: MediaCacheService.instance.cacheManager,
                               fit: BoxFit.cover,
                               width: double.infinity,
+                              memCacheWidth: 720,
                               fadeInDuration: const Duration(milliseconds: 150),
                               fadeOutDuration: const Duration(milliseconds: 150),
                               placeholder: (context, url) => Container(
@@ -2126,6 +2133,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   imageUrl: assetPath,
                   width: 200,
                   height: 200,
+                  memCacheWidth: 400,
+                  memCacheHeight: 400,
                   fit: BoxFit.contain,
                 )
               : Image.asset(
@@ -4076,6 +4085,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   cacheManager: MediaCacheService.instance.cacheManager,
                   fit: BoxFit.cover,
                   height: height,
+                  memCacheWidth: 800,
                   fadeInDuration: const Duration(milliseconds: 150),
                   fadeOutDuration: const Duration(milliseconds: 150),
                   placeholder: (context, u) => Container(
@@ -4239,58 +4249,48 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // 1. Top Pill: "Вы отправили ... подарок стоимостью / 50 Sparks"
-            ClipRRect(
-              borderRadius: BorderRadius.circular(22),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xB81A1B24),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: const Color(0x33FFFFFF),
-                      width: 1.0,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xE61A1B24),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: const Color(0x33FFFFFF),
+                  width: 1.0,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    topPillText1,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFE5E5EA),
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        topPillText1,
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFFE5E5EA),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        topPillText2,
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontDisplay,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 2),
+                  Text(
+                    topPillText2,
+                    style: const TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
 
             const SizedBox(height: 10),
 
             // 2. Ultra-rounded Frosted Glass Card
-            ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(
-                  width: 240,
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+            Container(
+              width: 240,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
                   decoration: userGift.isUpgraded
                       ? GiftVisuals.getBackdropDecoration(
                           backdropName: userGift.backdropName,
@@ -4404,14 +4404,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
                       const SizedBox(height: 14),
 
-                      // Button "Посмотреть" (Transparent, blurred, darker than card)
+                      // Button "Посмотреть" (Transparent, darker than card)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                          child: Material(
-                            color: const Color(0x52000000), // Darker transparent
-                            child: InkWell(
+                        child: Material(
+                          color: const Color(0x66000000), // Darker transparent
+                          child: InkWell(
                               onTap: () {
                                 GiftDetailModal.show(
                                   context,
@@ -4464,13 +4462,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
   // ===========================================================================

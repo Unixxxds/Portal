@@ -514,6 +514,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           ? CachedNetworkImage(
                               imageUrl: formattedBanner,
                               fit: BoxFit.cover,
+                              memCacheWidth: 800,
                               placeholder: (context, url) => _buildDefaultBanner(),
                               errorWidget: (context, url, error) => _buildDefaultBanner(),
                               fadeInDuration: const Duration(milliseconds: 140),
@@ -1198,7 +1199,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                     itemCount: _userGifts.length,
                     itemBuilder: (context, index) {
                       final gift = _userGifts[index];
-                      return _buildGiftCard(gift);
+                      return RepaintBoundary(
+                        child: _buildGiftCard(gift),
+                      );
                     },
                   ),
                 )
@@ -1540,9 +1543,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                       gift.backdropName,
                       gift.giftName,
                       gift.backdropGradient,
-                    ).withOpacity(0.4),
-                    blurRadius: 24,
-                    spreadRadius: 4,
+                    ).withOpacity(0.35),
+                    blurRadius: 10,
                   ),
                 ],
               ),

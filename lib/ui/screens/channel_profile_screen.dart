@@ -676,6 +676,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                                           imageUrl: fullUrl,
                                           cacheManager: MediaCacheService.instance.cacheManager,
                                           fit: BoxFit.cover,
+                                          memCacheWidth: 800,
                                           placeholder: (c, u) => Container(
                                             color: const Color(0xFF2C2C2E),
                                             child: const Center(

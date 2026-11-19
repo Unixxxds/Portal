@@ -155,6 +155,8 @@ class AvatarWidget extends StatelessWidget {
               ? CachedNetworkImage(
                   imageUrl: fullUrl,
                   fit: BoxFit.cover,
+                  memCacheWidth: (size * 2.5).round().clamp(60, 400),
+                  memCacheHeight: (size * 2.5).round().clamp(60, 400),
                   placeholder: (context, url) => Center(
                     child: Text(
                       _getInitials(title),

@@ -632,6 +632,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             CachedNetworkImage(
                               imageUrl: formattedBanner,
                               fit: BoxFit.cover,
+                              memCacheWidth: 800,
                               placeholder: (_, __) => Container(
                                 color: const Color(0xFF191919),
                               ),
@@ -1199,7 +1200,9 @@ class _ProfileTabState extends State<ProfileTab> {
                   itemCount: _userGifts.length,
                   itemBuilder: (context, index) {
                     final gift = _userGifts[index];
-                    return _buildGiftCard(gift, user);
+                    return RepaintBoundary(
+                      child: _buildGiftCard(gift, user),
+                    );
                   },
                 ),
               ),
@@ -1436,9 +1439,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       gift.backdropName,
                       gift.giftName,
                       gift.backdropGradient,
-                    ).withOpacity(0.4),
-                    blurRadius: 24,
-                    spreadRadius: 4,
+                    ).withOpacity(0.35),
+                    blurRadius: 10,
                   ),
                 ],
               ),

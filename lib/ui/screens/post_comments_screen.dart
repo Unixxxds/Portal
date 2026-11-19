@@ -765,6 +765,8 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                   imageUrl: assetPath,
                   width: 150,
                   height: 150,
+                  memCacheWidth: 300,
+                  memCacheHeight: 300,
                   fit: BoxFit.contain,
                 )
               : Image.asset(
@@ -884,6 +886,8 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                                       imageUrl: assetPath,
                                       width: 120,
                                       height: 120,
+                                      memCacheWidth: 240,
+                                      memCacheHeight: 240,
                                       fit: BoxFit.contain,
                                     )
                                   : Image.asset(
