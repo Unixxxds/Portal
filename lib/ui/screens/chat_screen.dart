@@ -986,8 +986,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-        ),
-      );
+        );
   }
 
   // ===========================================================================
@@ -1414,7 +1413,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 
   // ===========================================================================
@@ -4458,16 +4458,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      );
-}
+        );
+  }
 
   // ===========================================================================
   // EDIT BANNER OVER INPUT
