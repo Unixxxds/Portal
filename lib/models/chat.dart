@@ -95,6 +95,21 @@ class Chat {
 
   String get displayLastMessage {
     final text = lastMessageText.trim();
+    if (text.startsWith('[PORTAL_FORWARD]:') || text.contains('[PORTAL_FORWARD]:')) {
+      try {
+        final startIdx = text.indexOf('{');
+        final endIdx = text.lastIndexOf('}');
+        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+          final jsonStr = text.substring(startIdx, endIdx + 1);
+          final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+          final inner = map['text']?.toString() ?? '';
+          if (inner.isNotEmpty) {
+            return 'Переслано: ${inner.startsWith('[PORTAL_') ? 'Медиа' : inner}';
+          }
+        }
+      } catch (_) {}
+      return 'Пересланное сообщение';
+    }
     if (text.startsWith('[PORTAL_VOICE]:') || text.contains('[PORTAL_VOICE]:')) {
       return '🎤 Голосовое сообщение';
     }

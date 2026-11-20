@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/profile_color_theme.dart';
 import '../../models/user.dart';
-import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/profile_cache_service.dart';
 import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
@@ -18,10 +16,8 @@ class ProfileColorScreen extends StatefulWidget {
 }
 
 class _ProfileColorScreenState extends State<ProfileColorScreen> {
-  int _selectedTabIndex = 0; // 0: Профиль, 1: Имя
   late String _selectedThemeId;
   bool _isSaving = false;
-  List<UserGift> _userGifts = [];
 
   @override
   void initState() {
@@ -31,13 +27,6 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
     _selectedThemeId = (user?.profileColor != null && user!.profileColor!.isNotEmpty)
         ? user.profileColor!
         : 'default';
-
-    if (user != null) {
-      final cached = ProfileCacheService.getGifts(user.id);
-      if (cached != null) {
-        _userGifts = cached;
-      }
-    }
   }
 
   Future<void> _handleApply() async {
@@ -94,7 +83,7 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
         child: Column(
           children: [
             // =================================================================
-            // TOP BAR: Back button + Segmented Switcher [Профиль | Имя]
+            // TOP BAR: Back button + Title "Профиль"
             // =================================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -117,20 +106,20 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
                     ),
                   ),
                   const Spacer(),
-                  // Segmented control [Профиль | Имя]
                   Container(
-                    height: 34,
-                    padding: const EdgeInsets.all(2),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
                     decoration: BoxDecoration(
                       color: const Color(0xFF1C1C1E),
-                      borderRadius: BorderRadius.circular(17),
+                      borderRadius: BorderRadius.circular(18),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildSegmentButton('Профиль', 0),
-                        _buildSegmentButton('Имя', 1),
-                      ],
+                    child: const Text(
+                      'Профиль',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                   const Spacer(),
@@ -177,17 +166,13 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 22),
-
-                  // 4. USE GIFT SECTION ("ИСПОЛЬЗОВАТЬ ПОДАРОК")
-                  _buildGiftPresetsSection(),
                   const SizedBox(height: 20),
                 ],
               ),
             ),
 
             // =================================================================
-            // BOTTOM BUTTON: "Применить стиль"
+            // BOTTOM BUTTON: "Применить" (белая и максимально скругленная)
             // =================================================================
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -197,12 +182,11 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
                 child: ElevatedButton(
                   onPressed: _isSaving ? null : _handleApply,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B98FF),
-                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.white.withOpacity(0.6),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
+                    shape: const StadiumBorder(),
                   ),
                   child: _isSaving
                       ? const SizedBox(
@@ -210,56 +194,22 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.2,
-                            color: Colors.white,
+                            color: Colors.black,
                           ),
                         )
                       : const Text(
-                          'Применить стиль',
+                          'Применить',
                           style: TextStyle(
                             fontFamily: AppTheme.fontDisplay,
                             fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black,
                           ),
                         ),
                 ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSegmentButton(String title, int index) {
-    final isSelected = _selectedTabIndex == index;
-    return GestureDetector(
-      onTap: () {
-        setState(() => _selectedTabIndex = index);
-        if (index == 1) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Настройка цвета имени будет доступна в следующем обновлении'),
-              duration: Duration(seconds: 1),
-              backgroundColor: Color(0xFF191919),
-            ),
-          );
-        }
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2C2C2E) : Colors.transparent,
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontFamily: AppTheme.fontText,
-            fontSize: 13.5,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-            color: isSelected ? Colors.white : const Color(0xFF8E8E93),
-          ),
         ),
       ),
     );
@@ -397,12 +347,12 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
   }
 
   Widget _buildPaletteCard(ProfileColorTheme activeTheme) {
-    final all = ProfileColorTheme.allPresets;
+    const all = ProfileColorTheme.allPresets;
     final row1 = all.take(8).toList();
     final row2 = all.skip(8).take(8).toList();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(22),
@@ -421,53 +371,6 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: row2.map((item) => _buildColorCircle(item)).toList(),
-          ),
-          const SizedBox(height: 16),
-
-          const Divider(color: Color(0x14FFFFFF), height: 1),
-
-          // Row: "Фоновый эмодзи"
-          InkWell(
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Кастомные фоновые эмодзи будут добавлены в следующем апдейте'),
-                  duration: Duration(seconds: 1),
-                  backgroundColor: Color(0xFF191919),
-                ),
-              );
-            },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                children: [
-                  Icon(Icons.layers_outlined, color: Colors.white, size: 20),
-                  SizedBox(width: 12),
-                  Text(
-                    'Фоновый эмодзи',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Spacer(),
-                  Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93), size: 20),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 4),
-          const Text(
-            'Вы можете изменить цвет своего имени и оформление ответов на Ваши сообщения. Изменить >',
-            style: TextStyle(
-              fontFamily: AppTheme.fontText,
-              fontSize: 12.5,
-              color: Color(0xFF8E8E93),
-              height: 1.35,
-            ),
           ),
         ],
       ),
@@ -509,107 +412,6 @@ class _ProfileColorScreenState extends State<ProfileColorScreen> {
       ),
     );
   }
-
-  Widget _buildGiftPresetsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 4, bottom: 10),
-          child: Text(
-            'ИСПОЛЬЗОВАТЬ ПОДАРОК',
-            style: TextStyle(
-              fontFamily: AppTheme.fontText,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF8E8E93),
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 38,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _buildGiftChip(
-                icon: '🎁',
-                label: 'Мои подарки',
-                onTap: () {
-                  if (_userGifts.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('У вас пока нет подарков для использования стиля'),
-                        duration: Duration(seconds: 1),
-                        backgroundColor: Color(0xFF191919),
-                      ),
-                    );
-                  }
-                },
-              ),
-              const SizedBox(width: 8),
-              _buildGiftChip(
-                icon: '🍦',
-                label: 'Vice Cream',
-                onTap: () => setState(() => _selectedThemeId = 'cyan'),
-              ),
-              const SizedBox(width: 8),
-              _buildGiftChip(
-                icon: '🗽',
-                label: 'Chill Flame',
-                onTap: () => setState(() => _selectedThemeId = 'duo_sunset'),
-              ),
-              const SizedBox(width: 8),
-              _buildGiftChip(
-                icon: '🧸',
-                label: 'Plush Bear',
-                onTap: () => setState(() => _selectedThemeId = 'caramel'),
-              ),
-              const SizedBox(width: 8),
-              _buildGiftChip(
-                icon: '🚗',
-                label: 'Cyber Car',
-                onTap: () => setState(() => _selectedThemeId = 'duo_violet'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGiftChip({
-    required String icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.circular(19),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: AppTheme.fontText,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _TelegramPatternPainter extends CustomPainter {
@@ -625,7 +427,7 @@ class _TelegramPatternPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     final centerX = size.width / 2;
-    final centerY = 85.0;
+    const centerY = 85.0;
 
     // Concentric subtle circular rings behind avatar
     for (double r = 48; r <= 140; r += 26) {

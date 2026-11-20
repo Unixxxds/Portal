@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
-import '../../models/chat.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/api_service.dart';

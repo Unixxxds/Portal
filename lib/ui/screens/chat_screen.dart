@@ -2477,19 +2477,127 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ===========================================================================
   // MESSAGE BUBBLE
   // ===========================================================================
+  ForwardedMessageInfo? _parseForwardedInfo(String rawText) {
+    final trimmed = rawText.trim();
+    if (!trimmed.startsWith('[PORTAL_FORWARD]:')) return null;
+    try {
+      final startIdx = trimmed.indexOf('{');
+      final endIdx = trimmed.lastIndexOf('}');
+      if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+        final jsonStr = trimmed.substring(startIdx, endIdx + 1);
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final sId = map['sender_id'] is int
+            ? map['sender_id'] as int
+            : int.tryParse(map['sender_id']?.toString() ?? '') ?? 0;
+        final sName = map['sender_name']?.toString() ?? '';
+        final sAvatar = map['sender_avatar']?.toString() ?? '';
+        final text = map['text']?.toString() ?? '';
+        return ForwardedMessageInfo(
+          senderId: sId,
+          senderName: sName,
+          senderAvatar: sAvatar,
+          cleanText: text,
+        );
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Widget _buildForwardedHeader(ForwardedMessageInfo fwd, bool isMe) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openForwardedSenderProfile(
+        fwd.senderId,
+        fwd.senderName,
+        fwd.senderAvatar,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // "Переслано от"
+            Text(
+              'Переслано от',
+              style: TextStyle(
+                fontFamily: AppTheme.fontText,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: isMe ? const Color(0xB3FFFFFF) : const Color(0xFF8E8E93),
+                letterSpacing: -0.1,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                AvatarWidget(
+                  avatarUrl: fwd.senderAvatar,
+                  title: fwd.senderName,
+                  size: 20,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    fwd.senderName.isNotEmpty ? fwd.senderName : 'Пользователь',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: isMe ? Colors.white : const Color(0xFF3B98FF),
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openForwardedSenderProfile(int senderId, String senderName, String senderAvatar) async {
+    if (senderId <= 0 && senderName.isEmpty) return;
+    final chatProv = context.read<ChatProvider>();
+    Chat? target = chatProv.chats.where((c) => (senderId > 0 && (c.id == senderId || c.participantId == senderId))).firstOrNull;
+    if (target == null && senderName.isNotEmpty) {
+      target = chatProv.chats.where((c) => c.title.toLowerCase() == senderName.toLowerCase()).firstOrNull;
+    }
+    target ??= Chat(
+      id: senderId > 0 ? senderId : DateTime.now().millisecondsSinceEpoch,
+      participantId: senderId > 0 ? senderId : null,
+      title: senderName.isNotEmpty ? senderName : 'Пользователь',
+      type: 'direct',
+      avatar: senderAvatar,
+    );
+    Navigator.of(context).push(
+      TelegramProfileRoute(
+        builder: (_) => UserProfileScreen(chat: target!),
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(Message msg, bool isMe) {
-    if (_isGiftMessage(msg.text)) {
-      return _buildPortalGiftBubble(msg, isMe);
+    final fwd = _parseForwardedInfo(msg.text);
+    final effectiveMsg = fwd != null ? msg.copyWith(text: fwd.cleanText) : msg;
+
+    if (_isGiftMessage(effectiveMsg.text)) {
+      return _buildPortalGiftBubble(effectiveMsg, isMe);
     }
-    if (msg.text.trim().startsWith('[PORTAL_STICKER]:') || msg.text.contains('[PORTAL_STICKER]:')) {
-      return _buildPortalStickerBubble(msg, isMe);
+    if (effectiveMsg.text.trim().startsWith('[PORTAL_STICKER]:') || effectiveMsg.text.contains('[PORTAL_STICKER]:')) {
+      return _buildPortalStickerBubble(effectiveMsg, isMe);
     }
-    if (msg.text.trim().startsWith('[PORTAL_PHOTO]:')) {
-      return _buildPortalPhotoBubble(msg, isMe);
+    if (effectiveMsg.text.trim().startsWith('[PORTAL_PHOTO]:')) {
+      return _buildPortalPhotoBubble(effectiveMsg, isMe, forwardedInfo: fwd);
     }
-    if (msg.text.trim().startsWith('[PORTAL_VOICE]:')) {
+    if (effectiveMsg.text.trim().startsWith('[PORTAL_VOICE]:')) {
       return VoiceMessageBubble(
-        message: msg,
+        message: effectiveMsg,
         isMe: isMe,
         onLongPress: () => _showMessageContextMenu(msg),
         onCancel: msg.isPending
@@ -2497,8 +2605,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             : null,
       );
     }
-    if (_isPureEmoji(msg.text)) {
-      return _buildPureEmojiBubble(msg, isMe);
+    if (_isPureEmoji(effectiveMsg.text)) {
+      return _buildPureEmojiBubble(effectiveMsg, isMe);
     }
 
     final double maxBubbleWidth = MediaQuery.of(context).size.width * 0.78;
@@ -2507,7 +2615,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Builder(
         builder: (bubbleContext) {
-          final bubbleWidget = _buildBubbleBody(msg, isMe, maxBubbleWidth);
+          final bubbleWidget = _buildBubbleBody(msg, isMe, maxBubbleWidth, forwardedInfo: fwd);
           return GestureDetector(
             onLongPress: () => _showMessageContextMenu(
               msg,
@@ -2547,23 +2655,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildBubbleBody(Message msg, bool isMe, double maxBubbleWidth) {
+  Widget _buildBubbleBody(Message msg, bool isMe, double maxBubbleWidth, {ForwardedMessageInfo? forwardedInfo}) {
+    final effectiveMsg = forwardedInfo != null ? msg.copyWith(text: forwardedInfo.cleanText) : msg;
+
     return TelegramBubble(
       isMe: isMe,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Forwarded Header (if forwarded message)
+          if (forwardedInfo != null) ...[
+            _buildForwardedHeader(forwardedInfo, isMe),
+          ],
+
           // Replied Message Quote (if any)
-          if (msg.replyToMessageId != null) ...[
-            _buildReplyPreviewInBubble(msg.replyToMessageId!),
+          if (effectiveMsg.replyToMessageId != null) ...[
+            _buildReplyPreviewInBubble(effectiveMsg.replyToMessageId!),
             const SizedBox(height: 5),
           ],
 
           // Sender name if in group
-          if (!isMe && msg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
+          if (!isMe && effectiveMsg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
             Text(
-              msg.senderName,
+              effectiveMsg.senderName,
               style: const TextStyle(
                 fontFamily: AppTheme.fontDisplay,
                 color: Colors.white,
@@ -2575,7 +2690,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ],
 
           // Message text & time (Telegram inline layout)
-          _buildMessageTextWithTime(msg, isMe, maxBubbleWidth),
+          _buildMessageTextWithTime(effectiveMsg, isMe, maxBubbleWidth),
         ],
       ),
     );
@@ -3285,84 +3400,83 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _showForwardMessageSheet(Message msg) {
-    final chats = context.read<ChatProvider>().chats;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E22),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Переслать сообщение',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplay,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const Divider(color: Color(0x1AFFFFFF), height: 1),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: chats.length,
-                  itemBuilder: (c, i) {
-                    final targetChat = chats[i];
-                    return ListTile(
-                      leading: AvatarWidget(
-                        avatarUrl: targetChat.avatar,
-                        title: targetChat.title,
-                        size: 40,
-                        isChannel: targetChat.isChannel,
-                      ),
-                      title: Text(
-                        targetChat.title,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                      ),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        context.read<ChatProvider>().sendMessage(
-                          targetChat.id,
-                          msg.text,
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Переслано в "${targetChat.title}"'),
-                            backgroundColor: const Color(0xFF191919),
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return _ForwardMessageModalSheet(
+          message: msg,
+          currentChatId: widget.chat.id,
+          onForwardToChat: (targetChat) {
+            Navigator.pop(sheetContext);
+            _executeForwardMessage(msg, targetChat);
+          },
         );
       },
+    );
+  }
+
+  void _executeForwardMessage(Message msg, Chat targetChat) {
+    final auth = context.read<AuthProvider>();
+    final currentUser = auth.currentUser;
+    final currentUserId = currentUser?.id ?? 0;
+
+    // Check if message is already forwarded
+    final originalForward = _parseForwardedInfo(msg.text);
+    final String forwardPayload;
+
+    if (originalForward != null) {
+      forwardPayload = '[PORTAL_FORWARD]:${jsonEncode({
+        'sender_id': originalForward.senderId,
+        'sender_name': originalForward.senderName,
+        'sender_avatar': originalForward.senderAvatar,
+        'text': originalForward.cleanText,
+      })}';
+    } else {
+      final bool isAuthorMe = msg.senderId == currentUserId;
+      final int senderId = msg.senderId > 0
+          ? msg.senderId
+          : (isAuthorMe ? currentUserId : (widget.chat.participantId ?? widget.chat.id));
+
+      final String senderName = msg.senderName.isNotEmpty
+          ? msg.senderName
+          : (isAuthorMe
+              ? (currentUser?.fullName.isNotEmpty == true
+                  ? currentUser!.fullName
+                  : (currentUser?.username.isNotEmpty == true
+                      ? '@${currentUser!.username}'
+                      : 'Пользователь'))
+              : widget.chat.title);
+
+      final String senderAvatar = msg.senderAvatar.isNotEmpty
+          ? msg.senderAvatar
+          : (isAuthorMe ? (currentUser?.avatar ?? '') : widget.chat.avatar);
+
+      forwardPayload = '[PORTAL_FORWARD]:${jsonEncode({
+        'sender_id': senderId,
+        'sender_name': senderName,
+        'sender_avatar': senderAvatar,
+        'text': msg.text,
+      })}';
+    }
+
+    context.read<ChatProvider>().sendMessage(
+      targetChat.id,
+      forwardPayload,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Переслано в "${targetChat.title}"',
+          style: const TextStyle(fontFamily: AppTheme.fontText, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF191919),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -3622,7 +3736,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ===========================================================================
   // PORTAL PHOTO BUBBLE (Direct Chat Smart Collage & Caption)
   // ===========================================================================
-  Widget _buildPortalPhotoBubble(Message msg, bool isMe) {
+  Widget _buildPortalPhotoBubble(Message msg, bool isMe, {ForwardedMessageInfo? forwardedInfo}) {
     List<String> rawUrls = [];
     String caption = '';
     try {
@@ -3664,6 +3778,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                  if (forwardedInfo != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      child: _buildForwardedHeader(forwardedInfo, isMe),
+                    ),
+                  ],
                   if (msg.replyToMessageId != null) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
@@ -5874,4 +5994,253 @@ class _ImpactShockwavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ImpactShockwavePainter oldDelegate) => true;
+}
+
+class ForwardedMessageInfo {
+  final int senderId;
+  final String senderName;
+  final String senderAvatar;
+  final String cleanText;
+
+  ForwardedMessageInfo({
+    required this.senderId,
+    required this.senderName,
+    required this.senderAvatar,
+    required this.cleanText,
+  });
+}
+
+class _ForwardMessageModalSheet extends StatefulWidget {
+  final Message message;
+  final int currentChatId;
+  final void Function(Chat targetChat) onForwardToChat;
+
+  const _ForwardMessageModalSheet({
+    required this.message,
+    required this.currentChatId,
+    required this.onForwardToChat,
+  });
+
+  @override
+  State<_ForwardMessageModalSheet> createState() => _ForwardMessageModalSheetState();
+}
+
+class _ForwardMessageModalSheetState extends State<_ForwardMessageModalSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chats = context.watch<ChatProvider>().chats;
+    final filtered = _searchQuery.isEmpty
+        ? chats
+        : chats.where((c) {
+            final q = _searchQuery.toLowerCase();
+            return c.title.toLowerCase().contains(q) ||
+                (c.username != null && c.username!.toLowerCase().contains(q));
+          }).toList();
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Container(
+      height: screenHeight * 0.92,
+      decoration: const BoxDecoration(
+        color: Color(0xFF090909),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Верхняя полоска-индикатор
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 6),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0x33FFFFFF),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Верхняя плашка: Слева круглая кнопка с крестиком, по центру "Пересылка", справа отступ для баланса
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF1C1C1E),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 19,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  const Text(
+                    'Пересылка',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplay,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500, // Средний, не жирный шрифт
+                      color: Colors.white,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 34), // Для идеального центрирования заголовка
+                ],
+              ),
+            ),
+
+            // Поле поиска чатов
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF191919),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x14FFFFFF), width: 0.8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search_rounded, color: Color(0xFF8E8E93), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                        style: const TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Colors.white,
+                          fontSize: 14.5,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'Поиск чатов...',
+                          hintStyle: TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            color: Color(0xFF8E8E93),
+                            fontSize: 14.5,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    if (_searchQuery.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                        child: const Icon(Icons.cancel_rounded, color: Color(0xFF8E8E93), size: 16),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Divider(color: Color(0x14FFFFFF), height: 1),
+
+            // Список доступных чатов
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'Чаты не найдены',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontText,
+                          color: Color(0xFF8E8E93),
+                          fontSize: 14,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Divider(
+                        color: Color(0x0DFFFFFF),
+                        height: 1,
+                        indent: 72,
+                      ),
+                      itemBuilder: (ctx, i) {
+                        final chat = filtered[i];
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                          leading: AvatarWidget(
+                            avatarUrl: chat.avatar,
+                            title: chat.title,
+                            size: 46,
+                            isChannel: chat.isChannel,
+                            isSaved: chat.isSaved,
+                          ),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  chat.title,
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (chat.isVerified) ...[
+                                const SizedBox(width: 4),
+                                VerificationBadge(
+                                  verification: chat.effectiveVerification,
+                                  size: 15,
+                                ),
+                              ],
+                            ],
+                          ),
+                          subtitle: Text(
+                            chat.displayLastMessage.isNotEmpty
+                                ? chat.displayLastMessage
+                                : (chat.username != null && chat.username!.isNotEmpty
+                                    ? '@${chat.username}'
+                                    : 'Нет сообщений'),
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 13,
+                              color: Color(0xFF8E8E93),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () {
+                            widget.onForwardToChat(chat);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

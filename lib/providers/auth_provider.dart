@@ -297,6 +297,8 @@ class AuthProvider with ChangeNotifier {
       await ApiService.instance.updateProfile(
         firstName: updated.firstName,
         lastName: updated.lastName,
+        username: updated.username,
+        avatar: updated.avatar,
         profileColor: colorId,
       );
     } catch (e) {
