@@ -109,6 +109,7 @@ class DatabaseHelper {
             last_seen TEXT DEFAULT '',
             secondary_usernames TEXT DEFAULT '',
             pinned_channel_id INTEGER,
+            profile_color TEXT DEFAULT '',
             updated_at TEXT
           );
         ''');
@@ -320,6 +321,9 @@ class DatabaseHelper {
       }
       if (!userCols.contains('pinned_channel_id')) {
         await db.execute("ALTER TABLE users ADD COLUMN pinned_channel_id INTEGER;");
+      }
+      if (!userCols.contains('profile_color')) {
+        await db.execute("ALTER TABLE users ADD COLUMN profile_color TEXT DEFAULT '';");
       }
       if (!userCols.contains('updated_at')) {
         await db.execute("ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT '';");

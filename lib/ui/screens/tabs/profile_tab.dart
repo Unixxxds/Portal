@@ -12,6 +12,7 @@ import '../../../models/user_gift.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/chat_provider.dart';
 import '../../../services/api_service.dart';
+import '../../../services/profile_cache_service.dart';
 import '../../theme.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
@@ -22,7 +23,9 @@ import '../../widgets/telegram_chat_route.dart';
 import '../../widgets/telegram_profile_route.dart';
 import '../chat_screen.dart';
 import '../edit_profile_screen.dart';
+import '../profile_color_screen.dart';
 import '../profile_qr_screen.dart';
+import '../../../models/profile_color_theme.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -41,14 +44,21 @@ class _ProfileTabState extends State<ProfileTab> {
     super.initState();
     final auth = context.read<AuthProvider>();
     if (auth.currentUser != null) {
-      // 1. Instant 0 ms SQLite cache load before any network call
-      DatabaseHelper.instance.getUserGifts(auth.currentUser!.id).then((cached) {
-        if (cached.isNotEmpty && mounted && _userGifts.isEmpty) {
-          setState(() {
-            _userGifts = cached;
-          });
-        }
-      });
+      // 0. Synchronous instant memory cache lookup (0 ms)
+      final memGifts = ProfileCacheService.getGifts(auth.currentUser!.id);
+      if (memGifts != null && memGifts.isNotEmpty) {
+        _userGifts = memGifts;
+      } else {
+        // 1. Instant SQLite cache load
+        DatabaseHelper.instance.getUserGifts(auth.currentUser!.id).then((cached) {
+          if (cached.isNotEmpty && mounted && _userGifts.isEmpty) {
+            setState(() {
+              _userGifts = cached;
+            });
+            ProfileCacheService.set(auth.currentUser!.id, gifts: cached);
+          }
+        });
+      }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       auth.refreshCurrentUser();
@@ -62,14 +72,24 @@ class _ProfileTabState extends State<ProfileTab> {
     _loadedUserId = userId;
 
     // 1. Показываем локальный кэш
-    try {
-      final cached = await DatabaseHelper.instance.getUserGifts(userId);
-      if (cached.isNotEmpty && mounted && _userGifts.isEmpty) {
+    if (_userGifts.isEmpty) {
+      final memGifts = ProfileCacheService.getGifts(userId);
+      if (memGifts != null && memGifts.isNotEmpty && mounted) {
         setState(() {
-          _userGifts = cached;
+          _userGifts = memGifts;
         });
+      } else {
+        try {
+          final cached = await DatabaseHelper.instance.getUserGifts(userId);
+          if (cached.isNotEmpty && mounted && _userGifts.isEmpty) {
+            setState(() {
+              _userGifts = cached;
+            });
+            ProfileCacheService.set(userId, gifts: cached);
+          }
+        } catch (_) {}
       }
-    } catch (_) {}
+    }
 
     // 2. Всегда загружаем актуальный список с сервера (источник правды)
     try {
@@ -90,14 +110,16 @@ class _ProfileTabState extends State<ProfileTab> {
         return UserGift.fromJson(map, fallbackUserId: userId);
       }).toList();
 
-      if (mounted) {
+      final bool giftsChanged = !ProfileCacheService.areGiftsEqual(_userGifts, freshList);
+      ProfileCacheService.set(userId, gifts: freshList);
+      await DatabaseHelper.instance.saveUserGifts(userId, freshList);
+
+      if (mounted && (giftsChanged || _isLoadingGifts)) {
         setState(() {
           _userGifts = freshList;
           _isLoadingGifts = false;
         });
       }
-
-      await DatabaseHelper.instance.saveUserGifts(userId, freshList);
     } catch (e) {
       debugPrint('Error loading user gifts in profile tab: $e');
     } finally {
@@ -359,6 +381,38 @@ class _ProfileTabState extends State<ProfileTab> {
                       color: Color(0xFF242424),
                       shape: BoxShape.circle,
                     ),
+                    child: const Icon(Icons.palette_outlined, color: Color(0xFF3B98FF), size: 20),
+                  ),
+                  title: const Text(
+                    'Цвет профиля',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontText,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Фон, темы оформления и подарки',
+                    style: TextStyle(fontFamily: AppTheme.fontText, color: Color(0xFF929292), fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ProfileColorScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1, color: Color(0x14FFFFFF), indent: 56),
+                ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF242424),
+                      shape: BoxShape.circle,
+                    ),
                     child: const Icon(Icons.add_a_photo_outlined, color: Colors.white, size: 19),
                   ),
                   title: const Text(
@@ -587,13 +641,47 @@ class _ProfileTabState extends State<ProfileTab> {
     final savedMessagesChat = chatProvider.chats.where((c) => c.isSaved).firstOrNull;
 
     final formattedBanner = AppConstants.formatMediaUrl(user.bannerUrl);
+    final profileTheme = ProfileColorTheme.fromId(user.profileColor);
 
     return Scaffold(
-      backgroundColor: AppTheme.appBg,
-      body: SafeArea(
-        bottom: false,
-        top: formattedBanner.isEmpty,
-        child: RefreshIndicator(
+      backgroundColor: profileTheme.backgroundGradient.last,
+      body: Stack(
+        children: [
+          // Background Gradient matching Telegram profile
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: profileTheme.backgroundGradient,
+                  stops: profileTheme.stops,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 340,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.0, -0.2),
+                  radius: 0.85,
+                  colors: [
+                    profileTheme.ambientGlow,
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            bottom: false,
+            top: formattedBanner.isEmpty,
+            child: RefreshIndicator(
           color: Colors.white,
           backgroundColor: const Color(0xFF191919),
           onRefresh: () async {
@@ -612,13 +700,16 @@ class _ProfileTabState extends State<ProfileTab> {
               // HERO BANNER & AVATAR (Edge-to-edge with animated GIF/WebP support)
               // ===============================================================
               SizedBox(
-                height: 240,
+                height: 250,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Banner Image spanning down
-                    Positioned.fill(
-                      bottom: 0,
+                    // Banner Image spanning down with smooth alpha fade
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 360,
                       child: GestureDetector(
                         onTap: () {
                           Navigator.push(
@@ -629,18 +720,35 @@ class _ProfileTabState extends State<ProfileTab> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            CachedNetworkImage(
-                              imageUrl: formattedBanner,
-                              fit: BoxFit.cover,
-                              memCacheWidth: 800,
-                              placeholder: (_, __) => Container(
-                                color: const Color(0xFF191919),
+                            ShaderMask(
+                              shaderCallback: (rect) {
+                                return const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black,
+                                    Colors.black,
+                                    Colors.black87,
+                                    Colors.black38,
+                                    Colors.transparent,
+                                  ],
+                                  stops: [0.0, 0.45, 0.70, 0.88, 1.0],
+                                ).createShader(rect);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: CachedNetworkImage(
+                                imageUrl: formattedBanner,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 800,
+                                placeholder: (_, __) => Container(
+                                  color: const Color(0xFF191919),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  color: const Color(0xFF191919),
+                                ),
+                                fadeInDuration: const Duration(milliseconds: 140),
+                                fadeOutDuration: const Duration(milliseconds: 140),
                               ),
-                              errorWidget: (_, __, ___) => Container(
-                                color: const Color(0xFF191919),
-                              ),
-                              fadeInDuration: const Duration(milliseconds: 140),
-                              fadeOutDuration: const Duration(milliseconds: 140),
                             ),
                             // Top subtle dark gradient for title readability
                             Positioned(
@@ -651,30 +759,7 @@ class _ProfileTabState extends State<ProfileTab> {
                               child: Container(
                                 decoration: const BoxDecoration(
                                   gradient: LinearGradient(
-                                    colors: [Color(0x99000000), Colors.transparent],
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // Bottom smooth gradient blur & fade into deep black #090909
-                            Positioned(
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              height: 110,
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      Color(0x33090909),
-                                      Color(0x80090909),
-                                      Color(0xD9090909),
-                                      Color(0xFF090909),
-                                    ],
-                                    stops: [0.0, 0.25, 0.55, 0.8, 1.0],
+                                    colors: [Color(0x80000000), Colors.transparent],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -1039,12 +1124,11 @@ class _ProfileTabState extends State<ProfileTab> {
                         ),
                       ),
 
-                      // Сама скругленная плашка
+                      // Сама скругленная плашка (без обводки, адаптируется к теме)
                       Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF191919),
+                          color: profileTheme.cardColor,
                           borderRadius: BorderRadius.circular(26),
-                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: Material(
@@ -1297,6 +1381,65 @@ class _ProfileTabState extends State<ProfileTab> {
                       );
                     },
                   ),
+                  const Divider(color: Color(0x14FFFFFF), thickness: 0.8, indent: 56, height: 1),
+
+                  // 3. Цвет профиля (Темы и фоны)
+                  ListTile(
+                    leading: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF242424),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.palette_outlined, color: Color(0xFF3B98FF), size: 18),
+                    ),
+                    title: const Text(
+                      'Цвет профиля',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      profileTheme.name,
+                      style: const TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        color: Color(0xFF929292),
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: profileTheme.isDuoTone ? null : profileTheme.previewColors.first,
+                            gradient: profileTheme.isDuoTone
+                                ? LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: profileTheme.previewColors,
+                                  )
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Icon(Icons.chevron_right_rounded, color: Color(0xFF929292), size: 18),
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ProfileColorScreen()),
+                      );
+                    },
+                  ),
 
                   // 3. Электронная почта
                   if (user.email != null && user.email!.isNotEmpty) ...[
@@ -1373,11 +1516,12 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         ),
       ),
+      ],
+      ),
     );
   }
 
   Widget _buildGiftCard(UserGift gift, User user) {
-    final hasPattern = gift.isUpgraded && gift.patternName.isNotEmpty;
     final numText = (gift.nftNumber > 0 ? gift.nftNumber : gift.id).toString();
     final profileName = user.displayName.isNotEmpty ? user.displayName : user.username;
     final profileAvatar = user.avatar;
@@ -1417,16 +1561,6 @@ class _ProfileTabState extends State<ProfileTab> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Pattern Overlay if upgraded
-            if (hasPattern)
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: GiftPatternPainter(
-                    patternName: gift.patternName,
-                  ),
-                ),
-              ),
-
             // Subtle ambient bloom behind model
             Container(
               width: 50,

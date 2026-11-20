@@ -276,6 +276,34 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<void> updateProfileColor(String colorId) async {
+    if (_currentUser == null) return;
+    final isDefault = colorId.isEmpty || colorId == 'default';
+    final updated = _currentUser!.copyWith(
+      profileColor: isDefault ? '' : colorId,
+      clearProfileColor: isDefault,
+    );
+    _currentUser = updated;
+    notifyListeners();
+
+    await DatabaseHelper.instance.updateUserProfile(updated);
+    await SecureStorageService.instance.saveUserProfileColor(updated.id, colorId);
+    await MultiAccountService.instance.updateUser(updated);
+
+    try {
+      await ApiService.instance.updateProfileColor(colorId);
+    } catch (_) {}
+    try {
+      await ApiService.instance.updateProfile(
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        profileColor: colorId,
+      );
+    } catch (e) {
+      debugPrint('updateProfileColor API error: $e');
+    }
+  }
+
   void deductSparks(int amount) {
     if (_currentUser != null) {
       final currentSparks = _currentUser!.sparks;
@@ -283,6 +311,7 @@ class AuthProvider with ChangeNotifier {
       _currentUser = _currentUser!.copyWith(sparks: newSparks);
       notifyListeners();
       DatabaseHelper.instance.updateUserSparks(_currentUser!.id, newSparks);
+      MultiAccountService.instance.updateUser(_currentUser!);
     }
   }
 
@@ -291,6 +320,7 @@ class AuthProvider with ChangeNotifier {
       _currentUser = _currentUser!.copyWith(sparks: sparks);
       notifyListeners();
       DatabaseHelper.instance.updateUserSparks(_currentUser!.id, sparks);
+      MultiAccountService.instance.updateUser(_currentUser!);
     }
   }
 
@@ -321,6 +351,12 @@ class AuthProvider with ChangeNotifier {
           final cachedChannelId = await SecureStorageService.instance.getUserPinnedChannelId(serverUser.id);
           if (cachedChannelId != null && cachedChannelId > 0) {
             serverUser = serverUser.copyWith(pinnedChannelId: cachedChannelId);
+          }
+        }
+        if (serverUser.profileColor == null || serverUser.profileColor!.isEmpty) {
+          final cachedColor = await SecureStorageService.instance.getUserProfileColor(serverUser.id);
+          if (cachedColor != null && cachedColor.isNotEmpty) {
+            serverUser = serverUser.copyWith(profileColor: cachedColor);
           }
         }
         _currentUser = serverUser;
@@ -410,11 +446,27 @@ class AuthProvider with ChangeNotifier {
   void _listenWs() {
     _wsSub?.cancel();
     _wsSub = WebSocketService.instance.events.listen((event) {
-      if (event['type'] == 'user_profile_updated') {
+      final type = event['type']?.toString();
+      if (type == 'sparks_updated') {
+        final sparks = event['sparks'] is int
+            ? event['sparks'] as int
+            : int.tryParse(event['sparks']?.toString() ?? '');
+        if (sparks != null && _currentUser != null) {
+          setSparks(sparks);
+        }
+      } else if (type == 'user_profile_updated') {
         final userId = event['userId'] is int
             ? event['userId'] as int
             : int.tryParse(event['userId']?.toString() ?? '');
         if (_currentUser != null && (_currentUser!.id == userId || userId == null)) {
+          if (event['sparks'] != null) {
+            final sparks = event['sparks'] is int
+                ? event['sparks'] as int
+                : int.tryParse(event['sparks'].toString());
+            if (sparks != null) {
+              setSparks(sparks);
+            }
+          }
           if (event['artifacts'] != null) {
             final art = event['artifacts'] is int
                 ? event['artifacts'] as int

@@ -12,6 +12,8 @@ import '../theme.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
 import 'create_channel_screen.dart';
+import 'profile_color_screen.dart';
+import '../../models/profile_color_theme.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -1756,6 +1758,118 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     child: Text(
                       'Выберите канал, в котором вы являетесь создателем. Он будет закреплен и отображаться в вашем профиле.',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 12,
+                        color: Color(0xFF929292),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+
+                  // ===========================================================
+                  // GROUPED CARD 5: ЦВЕТ ПРОФИЛЯ
+                  // ===========================================================
+                  Builder(
+                    builder: (ctx) {
+                      final currentU = ctx.watch<AuthProvider>().currentUser;
+                      final currentTheme = ProfileColorTheme.fromId(currentU?.profileColor);
+
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191919),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const ProfileColorScreen()),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(22),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Row(
+                                children: [
+                                  // Иконка палитры
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF34C759),
+                                      borderRadius: BorderRadius.circular(8.5),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.palette_rounded,
+                                        color: Colors.white,
+                                        size: 19,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  const Text(
+                                    'Цвет профиля',
+                                    style: TextStyle(
+                                      fontFamily: AppTheme.fontDisplay,
+                                      fontSize: 15.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: currentTheme.isDuoTone ? null : currentTheme.previewColors.first,
+                                          gradient: currentTheme.isDuoTone
+                                              ? LinearGradient(
+                                                  begin: Alignment.topLeft,
+                                                  end: Alignment.bottomRight,
+                                                  colors: currentTheme.previewColors,
+                                                )
+                                              : null,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        currentTheme.name,
+                                        style: const TextStyle(
+                                          fontFamily: AppTheme.fontText,
+                                          fontSize: 14.5,
+                                          color: Color(0xFF6B7280),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Color(0xFF6B7280),
+                                        size: 20,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Text(
+                      'Выберите индивидуальную цветовую гамму фона и плашек для оформления Вашего профиля.',
                       style: TextStyle(
                         fontFamily: AppTheme.fontText,
                         fontSize: 12,

@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
   file_selector_windows
+  firebase_core
   permission_handler_windows
   record_windows
 )
@@ -14,8 +15,6 @@ list(APPEND FLUTTER_FFI_PLUGIN_LIST
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
-
-list(REMOVE_ITEM FLUTTER_PLUGIN_LIST "firebase_core")
 
 foreach(plugin ${FLUTTER_PLUGIN_LIST})
   add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lottie/lottie.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../theme.dart';
@@ -37,6 +38,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   bool _isOwner = false;
   String _liveVerification = 'none';
   int _channelArtifacts = 0;
+  bool _isMuted = false;
 
   List<String> _channelPhotos = [];
   bool _isLoadingPhotos = true;
@@ -52,8 +54,39 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
     _channelArtifacts = widget.chat.artifacts;
 
     _checkOwner();
+    _loadMuteState();
     _loadChannelDetails();
     _loadChannelPhotos();
+  }
+
+  Future<void> _loadMuteState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _isMuted = prefs.getBool('channel_muted_${_currentChat.id}') ?? false;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleMute() async {
+    HapticFeedback.lightImpact();
+    final newVal = !_isMuted;
+    setState(() => _isMuted = newVal);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('channel_muted_${_currentChat.id}', newVal);
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newVal ? 'Уведомления отключены' : 'Уведомления включены'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _checkOwner() {
@@ -417,7 +450,38 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                       style: const TextStyle(
                         color: Color(0xFF8E8E93),
                         fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w300,
+                        fontFamily: AppTheme.fontText,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Circular action buttons (matching reference screenshot)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildRoundActionButton(
+                            icon: _isMuted ? Icons.notifications_off_rounded : Icons.notifications_rounded,
+                            label: 'звук',
+                            onTap: _toggleMute,
+                          ),
+                          const SizedBox(width: 24),
+                          _buildRoundActionButton(
+                            icon: Icons.chat_bubble_rounded,
+                            label: 'чат',
+                            onTap: () {}, // Неактивна по требованию
+                          ),
+                          const SizedBox(width: 24),
+                          _buildRoundActionButton(
+                            icon: _isSubscribed ? Icons.logout_rounded : Icons.add_rounded,
+                            label: _isSubscribed ? 'покинуть' : 'подписаться',
+                            onTap: _toggleSubscription,
+                          ),
+                        ],
                       ),
                     ),
 
@@ -507,19 +571,16 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 14),
-
-                    // Card 2: Actions
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C1E),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        children: [
-                          if (_isOwner)
-                            // Настройки канала
+                    if (_isOwner) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C1C1E),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          children: [
                             _buildActionTile(
                               icon: Icons.tune_rounded,
                               iconBgColor: const Color(0xFFFF9500),
@@ -528,20 +589,11 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                               onTap: _openEditScreen,
                               isFirst: true,
                               isLast: true,
-                            )
-                          else
-                            _buildActionTile(
-                              icon: _isSubscribed ? Icons.notifications_off_rounded : Icons.notifications_active_rounded,
-                              iconBgColor: _isSubscribed ? const Color(0xFFFF3B30) : const Color(0xFF34C759),
-                              title: _isSubscribed ? 'Покинуть канал' : 'Подписаться на канал',
-                              trailingText: '>',
-                              onTap: _toggleSubscription,
-                              isFirst: true,
-                              isLast: true,
                             ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
 
                     if (_isOwner) ...[
                       const SizedBox(height: 12),
@@ -726,6 +778,58 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRoundActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      width: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              splashColor: Colors.white.withOpacity(0.12),
+              highlightColor: Colors.white.withOpacity(0.06),
+              child: Container(
+                width: 58,
+                height: 58,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF1C1C1E),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              fontFamily: AppTheme.fontText,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }

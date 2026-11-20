@@ -314,8 +314,8 @@ class ApiService {
   Future<Map<String, dynamic>> getMe() async {
     try {
       final response = await _dio.get('/api/users/me');
-      if (response.data is Map<String, dynamic>) {
-        return response.data as Map<String, dynamic>;
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
       }
     } catch (e) {
       debugPrint('ApiService.getMe error: $e');
@@ -471,8 +471,8 @@ class ApiService {
         data: payload,
       );
 
-      if (response.data is Map<String, dynamic>) {
-        return response.data as Map<String, dynamic>;
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
       }
       return {'success': true, 'data': response.data};
     } on DioException catch (e) {
@@ -895,6 +895,7 @@ class ApiService {
     String? avatar,
     String? bannerUrl,
     int? pinnedChannelId,
+    String? profileColor,
   }) async {
     final cleanUsername = username != null
         ? username.replaceFirst(RegExp(r'^@+'), '').trim().toLowerCase()
@@ -910,6 +911,8 @@ class ApiService {
       if (avatar != null && avatar.isNotEmpty) 'avatar': avatar.trim(),
       if (bannerUrl != null) 'bannerUrl': bannerUrl.trim(),
       if (bannerUrl != null) 'banner_url': bannerUrl.trim(),
+      if (profileColor != null) 'profile_color': profileColor,
+      if (profileColor != null) 'profileColor': profileColor,
       'pinned_channel_id': pinnedChannelId,
       'pinnedChannelId': pinnedChannelId,
       'channel_id': pinnedChannelId,
@@ -929,6 +932,21 @@ class ApiService {
       return res.data as Map<String, dynamic>;
     }
     return {'success': true, 'data': payload};
+  }
+
+  Future<Map<String, dynamic>> updateProfileColor(String colorId) async {
+    try {
+      final res = await _dio.post('/api/user/profile-color', data: {
+        'profile_color': colorId,
+        'profileColor': colorId,
+      });
+      if (res.data is Map<String, dynamic>) {
+        return res.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('ApiService.updateProfileColor error: $e');
+    }
+    return {'success': false};
   }
 
   // Регистрация FCM push-токена устройства на бэкенде

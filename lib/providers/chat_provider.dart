@@ -679,6 +679,7 @@ class ChatProvider with ChangeNotifier {
 
   void _deduplicateMessages(List<Message> list) {
     final seenIds = <int>{};
+    final seenGiftDbIds = <dynamic>{};
     list.removeWhere((m) {
       if (m.id > 0) {
         if (seenIds.contains(m.id)) {
@@ -686,8 +687,47 @@ class ChatProvider with ChangeNotifier {
         }
         seenIds.add(m.id);
       }
+      final trimmed = m.text.trim();
+      if (trimmed.startsWith('[PORTAL_GIFT]:')) {
+        try {
+          final jsonStr = trimmed.substring('[PORTAL_GIFT]:'.length).trim();
+          final map = jsonDecode(jsonStr);
+          if (map is Map && map['giftDbId'] != null) {
+            final gId = map['giftDbId'];
+            if (seenGiftDbIds.contains(gId)) {
+              return true;
+            }
+            seenGiftDbIds.add(gId);
+          }
+        } catch (_) {}
+      }
       return false;
     });
+  }
+
+  Future<void> handleIncomingGiftMessage(int chatId, Message msg) async {
+    await DatabaseHelper.instance.insertMessage(msg);
+    final activeKey = _activeChatId ?? chatId;
+    final list = _messagesByChat[activeKey] ?? [];
+    if (!list.any((m) => m.id == msg.id)) {
+      list.add(msg);
+      _deduplicateMessages(list);
+      _messagesByChat[activeKey] = list;
+      if (_activeChatParticipantId != null) {
+        _messagesByChat[_activeChatParticipantId!] = list;
+      }
+      if (chatId != activeKey) {
+        _messagesByChat[chatId] = list;
+      }
+      await DatabaseHelper.instance.updateChatLastMessage(
+        msg.chatId,
+        msg.text,
+        msg.createdAt,
+        unreadDelta: 0,
+      );
+      _chats = await DatabaseHelper.instance.getChats();
+      notifyListeners();
+    }
   }
 
   void _reconcileServerMessage(int chatId, int tempId, Message serverMsg) {

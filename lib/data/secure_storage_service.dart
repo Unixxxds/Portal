@@ -39,6 +39,20 @@ class SecureStorageService {
     return prefs.getInt('user_pinned_channel_$userId');
   }
 
+  Future<void> saveUserProfileColor(int userId, String colorId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (colorId.isNotEmpty && colorId != 'default') {
+      await prefs.setString('user_profile_color_$userId', colorId);
+    } else {
+      await prefs.remove('user_profile_color_$userId');
+    }
+  }
+
+  Future<String?> getUserProfileColor(int userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('user_profile_color_$userId');
+  }
+
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.tokenKey);

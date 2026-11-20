@@ -16,6 +16,7 @@ class User {
   final String? lastSeen;
   final List<String> secondaryUsernames;
   final int? pinnedChannelId;
+  final String? profileColor;
 
   User({
     required this.id,
@@ -35,6 +36,7 @@ class User {
     this.lastSeen,
     this.secondaryUsernames = const [],
     this.pinnedChannelId,
+    this.profileColor,
   });
 
   String get fullName {
@@ -64,6 +66,7 @@ class User {
   bool get isDev => effectiveVerification == 'dev';
   bool get isArtist => effectiveVerification == 'artist';
 
+  String? get bio => description;
   int get sparksBalance => sparks;
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -88,6 +91,7 @@ class User {
           : (json['channel_id'] is int
               ? json['channel_id'] as int
               : int.tryParse(json['pinned_channel_id']?.toString() ?? json['channel_id']?.toString() ?? '')),
+      profileColor: json['profile_color']?.toString() ?? json['profileColor']?.toString(),
       secondaryUsernames: (json['secondary_usernames'] is List)
           ? (json['secondary_usernames'] as List)
               .map((e) => e.toString().trim().replaceFirst(RegExp(r'^@+'), ''))
@@ -127,6 +131,7 @@ class User {
       'last_seen': lastSeen ?? '',
       'secondary_usernames': secondaryUsernames.join(','),
       'pinned_channel_id': pinnedChannelId,
+      'profile_color': profileColor ?? '',
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -167,6 +172,7 @@ class User {
       isOnline: isOnlineVal,
       lastSeen: map['last_seen']?.toString(),
       pinnedChannelId: parsedChannelId,
+      profileColor: map['profile_color']?.toString(),
       secondaryUsernames: (map['secondary_usernames'] is String && (map['secondary_usernames'] as String).isNotEmpty)
           ? (map['secondary_usernames'] as String)
               .split(',')
@@ -196,6 +202,8 @@ class User {
     List<String>? secondaryUsernames,
     int? pinnedChannelId,
     bool clearPinnedChannel = false,
+    String? profileColor,
+    bool clearProfileColor = false,
   }) {
     return User(
       id: id ?? this.id,
@@ -215,6 +223,7 @@ class User {
       lastSeen: lastSeen ?? this.lastSeen,
       secondaryUsernames: secondaryUsernames ?? this.secondaryUsernames,
       pinnedChannelId: clearPinnedChannel ? null : (pinnedChannelId ?? this.pinnedChannelId),
+      profileColor: clearProfileColor ? null : (profileColor ?? this.profileColor),
     );
   }
 }

@@ -107,6 +107,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isInitialMessagesRecorded = false;
   ChatProvider? _chatProvider;
 
+  // Pinned message jump & highlight state
+  int? _highlightedMessageId;
+  Timer? _highlightTimer;
+  final Map<int, GlobalKey> _messageKeys = {};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -324,6 +329,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _textFocusNode.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
+    _highlightTimer?.cancel();
     _audioRecorder.dispose();
     _rippleController.dispose();
     _blinkController.dispose();
@@ -620,18 +626,67 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return '$m:$s:$cs';
   }
 
+  void _highlightMessage(int messageId) {
+    _highlightTimer?.cancel();
+    HapticFeedback.selectionClick();
+    setState(() {
+      _highlightedMessageId = messageId;
+    });
+    _highlightTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (mounted) {
+        setState(() {
+          if (_highlightedMessageId == messageId) {
+            _highlightedMessageId = null;
+          }
+        });
+      }
+    });
+  }
+
   void _scrollToMessage(int messageId) {
     final chatProvider = context.read<ChatProvider>();
     final messages = chatProvider.activeMessages;
     final idx = messages.indexWhere((m) => m.id == messageId);
-    if (idx != -1 && _scrollController.hasClients) {
-      final max = _scrollController.position.maxScrollExtent;
-      final target = (idx / (messages.isNotEmpty ? messages.length : 1)) * max;
-      _scrollController.animateTo(
-        target,
+    if (idx == -1) return;
+
+    // 1. Immediately trigger luminous highlight on target message
+    _highlightMessage(messageId);
+
+    // 2. If already built and mounted, smoothly center it in view
+    final existingContext = _messageKeys[messageId]?.currentContext;
+    if (existingContext != null && existingContext.mounted) {
+      Scrollable.ensureVisible(
+        existingContext,
         duration: const Duration(milliseconds: 350),
+        alignment: 0.5,
         curve: Curves.easeOutCubic,
       );
+      return;
+    }
+
+    // 3. Otherwise approximate scroll with controller, then fine-tune center
+    if (_scrollController.hasClients) {
+      final max = _scrollController.position.maxScrollExtent;
+      final target = (idx / (messages.isNotEmpty ? messages.length : 1)) * max;
+      _scrollController
+          .animateTo(
+        target.clamp(0.0, max),
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      )
+          .then((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final postContext = _messageKeys[messageId]?.currentContext;
+          if (postContext != null && postContext.mounted) {
+            Scrollable.ensureVisible(
+              postContext,
+              duration: const Duration(milliseconds: 200),
+              alignment: 0.5,
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
+      });
     }
   }
 
@@ -801,19 +856,49 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 child: cardWidget,
                               );
 
+                              final itemKey = _messageKeys.putIfAbsent(msg.id, () => GlobalKey());
+                              final isHighlighted = _highlightedMessageId == msg.id;
+
+                              final highlightedCard = AnimatedContainer(
+                                duration: const Duration(milliseconds: 350),
+                                curve: Curves.easeInOut,
+                                margin: const EdgeInsets.symmetric(vertical: 1.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isHighlighted ? const Color(0x38FFFFFF) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isHighlighted ? const Color(0x60FFFFFF) : Colors.transparent,
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: isHighlighted
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.white.withOpacity(0.22),
+                                            blurRadius: 16,
+                                            spreadRadius: 2,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: cardWidget,
+                              );
+
                               if (showDate) {
                                 return RepaintBoundary(
+                                  key: itemKey,
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       _buildDateBadge(_formatDateBadge(msg.createdAt)),
-                                      cardWidget,
+                                      highlightedCard,
                                     ],
                                   ),
                                 );
                               }
                               return RepaintBoundary(
-                                child: cardWidget,
+                                key: itemKey,
+                                child: highlightedCard,
                               );
                             },
                           ),
@@ -3016,9 +3101,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final currentPinned = chatProvider.getPinnedMessage(widget.chat.id);
     final isCurrentlyPinned = currentPinned?.id == msg.id;
 
+    final bool isGift = _isGiftMessage(msg.text);
     String cleanText = msg.text;
-    if (_isGiftMessage(cleanText)) {
-      cleanText = 'Подарок';
+    String? copyText;
+    if (isGift) {
+      Map<String, dynamic> giftData = {};
+      try {
+        final raw = cleanText.trim();
+        final jsonStr = raw.startsWith('[PORTAL_GIFT]:')
+            ? raw.substring('[PORTAL_GIFT]:'.length).trim()
+            : raw;
+        giftData = jsonDecode(jsonStr) as Map<String, dynamic>;
+      } catch (_) {}
+      final giftName = giftData['giftName']?.toString() ?? 'Подарок';
+      cleanText = 'Подарок: $giftName';
+      copyText = '🎁 Подарок «$giftName»';
     } else if (cleanText.startsWith('[PORTAL_PHOTO]:')) {
       try {
         final jsonStr = cleanText.substring('[PORTAL_PHOTO]:'.length).trim();
@@ -3041,24 +3138,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       } else {
         bubbleRect = Rect.fromCenter(
           center: Offset(screenSize.width / 2, screenSize.height / 2),
-          width: math.min(screenSize.width * 0.75, 260.0),
-          height: 60,
+          width: isGift ? 240.0 : math.min(screenSize.width * 0.75, 260.0),
+          height: isGift ? 250.0 : 60,
         );
       }
     } else {
       bubbleRect = Rect.fromCenter(
         center: Offset(screenSize.width / 2, screenSize.height / 2),
-        width: math.min(screenSize.width * 0.75, 260.0),
-        height: 60,
+        width: isGift ? 240.0 : math.min(screenSize.width * 0.75, 260.0),
+        height: isGift ? 250.0 : 60,
       );
     }
 
     final double maxBubbleWidth = screenSize.width * 0.78;
     final Widget bubbleWidget = customBubbleWidget ??
-        Container(
-          constraints: BoxConstraints(maxWidth: maxBubbleWidth, minWidth: 50),
-          child: _buildBubbleBody(msg, me, maxBubbleWidth),
-        );
+        (isGift
+            ? _buildPortalGiftFallback(msg, me)
+            : Container(
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth, minWidth: 50),
+                child: _buildBubbleBody(msg, me, maxBubbleWidth),
+              ));
 
     TelegramMessageContextMenu.show(
       context: context,
@@ -3076,7 +3175,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         });
       },
       onCopy: () {
-        Clipboard.setData(ClipboardData(text: cleanText));
+        Clipboard.setData(ClipboardData(text: copyText ?? cleanText));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Текст скопирован'),
@@ -3092,7 +3191,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       onForward: () {
         _showForwardMessageSheet(msg);
       },
-      onEdit: me
+      onEdit: (me && !isGift)
           ? () {
               setState(() {
                 _editingMessage = msg;
@@ -3265,56 +3364,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         );
       },
     );
-  }
-
-  Widget _buildContextMenuItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    final color = isDestructive ? const Color(0xFFFF453A) : Colors.white;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 14),
-            Text(
-              title,
-              style: TextStyle(
-                fontFamily: AppTheme.fontText,
-                color: color,
-                fontSize: 14.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatContextMenuDate(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return 'Сегодня';
-    try {
-      final dt = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
-      final timeStr = DateFormat('HH:mm').format(dt);
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        return 'Сегодня в $timeStr';
-      }
-      final yesterday = now.subtract(const Duration(days: 1));
-      if (dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day) {
-        return 'Вчера в $timeStr';
-      }
-      return '${dt.day}.${dt.month.toString().padLeft(2, '0')} в $timeStr';
-    } catch (_) {
-      return 'Сегодня';
-    }
   }
 
   static final RegExp _pureEmojiRegex = RegExp(
@@ -4154,6 +4203,171 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   // ===========================================================================
+  // PORTAL GIFT CARD PREVIEW (Used for Context Menu and Bubble)
+  // ===========================================================================
+  Widget _buildPortalGiftCardPreview(
+    Message msg,
+    UserGift userGift,
+    String comment,
+  ) {
+    final isImage = userGift.isImage ||
+        userGift.assetPath.toLowerCase().endsWith('.png') ||
+        userGift.assetPath.toLowerCase().endsWith('.jpg') ||
+        userGift.assetPath.toLowerCase().endsWith('.webp');
+
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+      decoration: userGift.isUpgraded
+          ? GiftVisuals.getBackdropDecoration(
+              backdropName: userGift.backdropName,
+              backdropGradient: userGift.backdropGradient,
+              giftName: userGift.giftName,
+              giftId: userGift.giftId,
+              borderRadius: BorderRadius.circular(30),
+            )
+          : BoxDecoration(
+              color: const Color(0x1AFFFFFF),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: const Color(0x38FFFFFF),
+                width: 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Centered Gift Preview with Soft Ambient Bloom
+          SizedBox(
+            height: 105,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: GiftVisuals.getAmbientGlowColor(
+                          userGift.backdropName,
+                          userGift.giftName,
+                          userGift.backdropGradient,
+                        ),
+                        blurRadius: 40,
+                        spreadRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
+                if (isImage)
+                  Image.asset(
+                    userGift.assetPath,
+                    height: 95,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.card_giftcard_rounded,
+                      size: 60,
+                      color: Colors.white70,
+                    ),
+                  )
+                else
+                  Lottie.asset(
+                    userGift.assetPath,
+                    height: 95,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.card_giftcard_rounded,
+                      size: 60,
+                      color: Colors.white70,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            userGift.isUpgraded
+                ? (userGift.modelName.isNotEmpty ? userGift.modelName : userGift.giftName)
+                : 'Подарок',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontDisplay,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: -0.2,
+            ),
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              comment,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppTheme.fontText,
+                fontSize: 13,
+                color: Colors.white.withOpacity(0.85),
+                height: 1.3,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0x66000000),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: const Color(0x30FFFFFF),
+                  width: 1.0,
+                ),
+              ),
+              child: const Text(
+                'Посмотреть',
+                style: TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortalGiftFallback(Message msg, bool isMe) {
+    Map<String, dynamic> giftData = {};
+    try {
+      final raw = msg.text.trim();
+      final jsonStr = raw.startsWith('[PORTAL_GIFT]:')
+          ? raw.substring('[PORTAL_GIFT]:'.length).trim()
+          : raw;
+      giftData = jsonDecode(jsonStr) as Map<String, dynamic>;
+    } catch (_) {}
+    final userGift = UserGift.fromJson(giftData, fallbackUserId: 0);
+    final comment = giftData['comment']?.toString() ?? '';
+    return _buildPortalGiftCardPreview(msg, userGift, comment);
+  }
+
+  // ===========================================================================
   // PORTAL GIFT BUBBLE (Centered Frosted Glass Card & Top Pill)
   // ===========================================================================
   Widget _buildPortalGiftBubble(Message msg, bool isMe) {
@@ -4237,17 +4451,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         userGift.assetPath.toLowerCase().endsWith('.jpg') ||
         userGift.assetPath.toLowerCase().endsWith('.webp');
 
+    final cardPreview = _buildPortalGiftCardPreview(msg, userGift, comment);
+
     return Align(
       alignment: Alignment.center,
-      child: GestureDetector(
-        onLongPress: () => _showMessageContextMenu(msg),
-        onSecondaryTap: () => _showMessageContextMenu(msg),
-        child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
+      child: Builder(
+        builder: (giftContext) {
+          return GestureDetector(
+            onLongPress: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: giftContext,
+              customBubbleWidget: cardPreview,
+              isMe: isMe,
+            ),
+            onSecondaryTap: () => _showMessageContextMenu(
+              msg,
+              bubbleContext: giftContext,
+              customBubbleWidget: cardPreview,
+              isMe: isMe,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
             // 1. Top Pill: "Вы отправили ... подарок стоимостью / 50 Sparks"
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
@@ -4461,11 +4689,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ],
                     ),
                   ),
+
+                  // 3. Reactions badge directly under the gift card!
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _buildReactionsBadge(msg, isMe),
+                  ),
                 ],
               ),
             ),
-          ),
-        );
+          );
+        },
+      ),
+    );
   }
 
   // ===========================================================================
@@ -5149,7 +5385,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         await _sendSelectedPhotos(files, caption);
       },
       onOpenGifts: () {
-        SendGiftModal.show(context, chat: widget.chat);
+        SendGiftModal.show(
+          context,
+          chat: widget.chat,
+          recipientId: widget.chat.participantId ?? widget.chat.id,
+          recipientUsername: widget.chat.username,
+        );
       },
     );
     if (mounted) {
@@ -5176,10 +5417,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       caption: caption,
       replyToMessageId: replyId,
     );
-  }
-
-  void _showFullscreenImage(String imageUrl) {
-    _showFullscreenGallery([imageUrl], 0);
   }
 
   void _showFullscreenGallery(List<String> imageUrls, int initialIndex) {

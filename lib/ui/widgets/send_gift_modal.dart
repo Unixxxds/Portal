@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -6,6 +5,7 @@ import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../data/database_helper.dart';
 import '../../models/chat.dart';
+import '../../models/message.dart';
 import '../../models/user_gift.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -108,6 +108,54 @@ class _SendGiftModalState extends State<SendGiftModal> {
       description: 'Энергичный анимированный подарок Bumblebee',
     ),
   ];
+
+  String? _preResolvedUsername;
+
+  @override
+  void initState() {
+    super.initState();
+    _preResolvedUsername = widget.recipientUsername?.trim();
+    if (_preResolvedUsername == null || _preResolvedUsername!.isEmpty) {
+      _preResolvedUsername = widget.chat.username?.trim();
+    }
+    _resolveInitialRecipient();
+  }
+
+  Future<void> _resolveInitialRecipient() async {
+    final targetId = widget.recipientId ?? widget.chat.participantId ?? widget.chat.id;
+    if (targetId <= 0) return;
+
+    final isMatchingTitle = _preResolvedUsername != null &&
+        _preResolvedUsername!.toLowerCase() == widget.chat.title.toLowerCase();
+
+    if (_preResolvedUsername == null || _preResolvedUsername!.isEmpty || isMatchingTitle) {
+      try {
+        final user = await DatabaseHelper.instance.getUser(targetId);
+        if (user != null && user.username.trim().isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _preResolvedUsername = user.username.trim().replaceFirst(RegExp(r'^@+'), '');
+            });
+          }
+          return;
+        }
+      } catch (_) {}
+
+      try {
+        final profile = await ApiService.instance.getUserProfile(targetId);
+        if (profile != null) {
+          final u = profile['username']?.toString().trim().replaceFirst(RegExp(r'^@+'), '');
+          if (u != null && u.isNotEmpty && u != 'null') {
+            if (mounted) {
+              setState(() {
+                _preResolvedUsername = u;
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -294,7 +342,7 @@ class _SendGiftModalState extends State<SendGiftModal> {
           builder: (confirmCtx) => _GiftConfirmModal(
             chat: widget.chat,
             gift: item,
-            recipientUsername: widget.recipientUsername,
+            recipientUsername: _preResolvedUsername ?? widget.recipientUsername,
             recipientId: widget.recipientId,
           ),
         );
@@ -419,13 +467,94 @@ class _GiftConfirmModal extends StatefulWidget {
 
 class _GiftConfirmModalState extends State<_GiftConfirmModal> {
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   bool _isSending = false;
   String? _errorMessage;
+  String? _effectiveUsername;
+  bool _isEditingUsername = false;
+
+  @override
+  void initState() {
+    super.initState();
+    String? initialUsername = widget.recipientUsername?.trim();
+    if (initialUsername == null || initialUsername.isEmpty) {
+      initialUsername = widget.chat.username?.trim();
+    }
+    if (initialUsername != null && initialUsername.startsWith('@')) {
+      initialUsername = initialUsername.replaceFirst(RegExp(r'^@+'), '');
+    }
+    _effectiveUsername = initialUsername;
+    _usernameController.text = _effectiveUsername ?? '';
+    _resolveRecipientUsername();
+  }
 
   @override
   void dispose() {
     _commentController.dispose();
+    _usernameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _resolveRecipientUsername() async {
+    final targetId = widget.recipientId ?? widget.chat.participantId ?? widget.chat.id;
+    if (targetId <= 0) return;
+
+    final isMatchingTitle = _effectiveUsername != null &&
+        _effectiveUsername!.toLowerCase() == widget.chat.title.toLowerCase();
+
+    if (_effectiveUsername == null || _effectiveUsername!.isEmpty || isMatchingTitle) {
+      // 1. Try local SQLite DB
+      try {
+        final cached = await DatabaseHelper.instance.getUser(targetId);
+        if (cached != null && cached.username.trim().isNotEmpty) {
+          final u = cached.username.trim().replaceFirst(RegExp(r'^@+'), '');
+          if (mounted) {
+            setState(() {
+              _effectiveUsername = u;
+              _usernameController.text = u;
+            });
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Try API user profile
+      try {
+        final profile = await ApiService.instance.getUserProfile(targetId);
+        if (profile != null) {
+          final u = profile['username']?.toString().trim().replaceFirst(RegExp(r'^@+'), '');
+          if (u != null && u.isNotEmpty && u != 'null') {
+            if (mounted) {
+              setState(() {
+                _effectiveUsername = u;
+                _usernameController.text = u;
+              });
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 3. Try searching by chat title
+      try {
+        final searchResults = await ApiService.instance.searchUsers(widget.chat.title);
+        for (final item in searchResults) {
+          final itemId = item['id'] is int ? item['id'] as int : int.tryParse(item['id'].toString());
+          if (itemId == targetId) {
+            final u = item['username']?.toString().trim().replaceFirst(RegExp(r'^@+'), '');
+            if (u != null && u.isNotEmpty && u != 'null') {
+              if (mounted) {
+                setState(() {
+                  _effectiveUsername = u;
+                  _usernameController.text = u;
+                });
+                return;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _handleSend() async {
@@ -448,10 +577,40 @@ class _GiftConfirmModalState extends State<_GiftConfirmModal> {
       _errorMessage = null;
     });
 
-    final recipientName = widget.chat.title.isNotEmpty ? widget.chat.title : 'Пользователь';
-    final recipientUsername = widget.recipientUsername ?? widget.chat.username;
     final recipientId = widget.recipientId ?? widget.chat.participantId ?? widget.chat.id;
     final comment = _commentController.text.trim();
+
+    String cleanUsername = (_effectiveUsername ?? _usernameController.text)
+        .trim()
+        .replaceFirst(RegExp(r'^@+'), '');
+
+    // If username is still not determined, try API lookup one last time
+    if (cleanUsername.isEmpty && recipientId > 0) {
+      try {
+        final profile = await ApiService.instance.getUserProfile(recipientId);
+        if (profile != null) {
+          final u = profile['username']?.toString().trim().replaceFirst(RegExp(r'^@+'), '');
+          if (u != null && u.isNotEmpty && u != 'null') {
+            cleanUsername = u;
+            _effectiveUsername = u;
+            _usernameController.text = u;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // If still empty, prompt sender to enter recipient's username
+    if (cleanUsername.isEmpty) {
+      setState(() {
+        _isSending = false;
+        _isEditingUsername = true;
+        _errorMessage = 'У получателя не указан @юзернейм. Введите его @юзернейм ниже.';
+      });
+      return;
+    }
+
+    // Optimistic balance deduction in AuthProvider so UI immediately reflects deducted balance
+    auth.deductSparks(widget.gift.price);
 
     try {
       // 1. Send gift through API
@@ -459,68 +618,61 @@ class _GiftConfirmModalState extends State<_GiftConfirmModal> {
       try {
         apiRes = await ApiService.instance.sendGift(
           giftId: widget.gift.id,
-          recipientUsername: recipientUsername,
+          recipientUsername: cleanUsername,
           recipientId: recipientId,
           comment: comment.isNotEmpty ? comment : null,
         );
       } catch (err) {
+        // Revert optimistic deduction if API fails!
+        auth.setSparks(userBalance);
         debugPrint('ApiService.sendGift network note: $err');
         if (mounted) {
+          final rawMsg = err.toString().replaceAll('Exception: ', '');
           setState(() {
-            _errorMessage = err.toString().replaceAll('Exception: ', '');
+            _errorMessage = rawMsg;
             _isSending = false;
+            if (rawMsg.contains('не найден') || rawMsg.contains('юзернейм') || rawMsg.contains('username')) {
+              _isEditingUsername = true;
+            }
           });
         }
         return;
       }
 
-      // 2. Deduct Sparks locally and update balance with database
+      // 2. Sync verified Sparks balance from server response
+      int? serverSparks;
       if (apiRes['sparks'] != null) {
-        final serverSparks = int.tryParse(apiRes['sparks'].toString()) ?? (userBalance - widget.gift.price);
-        auth.setSparks(serverSparks);
-      } else {
-        auth.deductSparks(widget.gift.price);
+        serverSparks = int.tryParse(apiRes['sparks'].toString());
+      } else if (apiRes['data'] is Map && apiRes['data']['sparks'] != null) {
+        serverSparks = int.tryParse(apiRes['data']['sparks'].toString());
       }
-      auth.refreshCurrentUser();
+      if (serverSparks != null) {
+        auth.setSparks(serverSparks);
+      }
 
-      // 3. Build Portal Gift message JSON payload
-      final giftDbId = apiRes['gift'] is Map && apiRes['gift']['id'] != null
-          ? apiRes['gift']['id']
+      // 3. Extract or build UserGift
+      final rawGift = apiRes['gift'] ?? (apiRes['data'] is Map ? apiRes['data']['gift'] : null);
+      final giftDbId = rawGift is Map && rawGift['id'] != null
+          ? rawGift['id']
           : DateTime.now().millisecondsSinceEpoch;
 
       final nowIso = DateTime.now().toIso8601String();
-      final giftData = {
-        'giftDbId': giftDbId,
-        'giftId': widget.gift.id,
-        'giftName': widget.gift.name,
-        'modelName': widget.gift.name,
-        'modelFile': widget.gift.assetPath,
-        'price': widget.gift.price,
-        'comment': comment,
-        'senderId': currentUser?.id ?? 0,
-        'senderName': currentUser?.fullName.isNotEmpty == true ? currentUser!.fullName : 'Пользователь',
-        'senderUsername': currentUser?.username ?? '',
-        'senderAvatar': currentUser?.avatar ?? '',
-        'recipientId': recipientId,
-        'recipientName': recipientName,
-        'createdAt': nowIso,
-        'isUpgraded': false,
-        'backdropName': 'Fire Engine',
-        'backdropGradient': 'radial-gradient(circle, #FF334B 0%, #C00C2C 60%, #4A000E 100%)',
-        'patternName': 'Ace Of Hearts',
-        'patternSvg': '',
-      };
 
-      final messageText = '[PORTAL_GIFT]:${jsonEncode(giftData)}';
-
-      // 4. Send message to the chat
-      await chatProvider.sendMessage(widget.chat.id, messageText);
+      // 4. Handle gift message from server response (NO duplicate chatProvider.sendMessage call!)
+      final rawMsg = apiRes['message'] ?? (apiRes['data'] is Map ? apiRes['data']['message'] : null);
+      if (rawMsg is Map) {
+        try {
+          final serverMsg = Message.fromJson(Map<String, dynamic>.from(rawMsg));
+          final targetChatId = (apiRes['chatId'] is int ? apiRes['chatId'] as int : null) ?? widget.chat.id;
+          await chatProvider.handleIncomingGiftMessage(targetChatId, serverMsg);
+        } catch (_) {}
+      }
 
       // 5. Instantly save the gifted gift into the recipient user's local gifts
       UserGift createdUserGift;
-      if (apiRes['gift'] is Map) {
+      if (rawGift is Map) {
         createdUserGift = UserGift.fromJson(
-          Map<String, dynamic>.from(apiRes['gift'] as Map),
+          Map<String, dynamic>.from(rawGift),
           fallbackUserId: recipientId,
         );
       } else {
@@ -774,27 +926,120 @@ class _GiftConfirmModalState extends State<_GiftConfirmModal> {
 
                         const SizedBox(height: 8),
 
-                        // Recipient indicator pill in pure grey
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF242426),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(0x1AFFFFFF),
-                              width: 1.0,
+                        // Recipient indicator pill or interactive username input
+                        if (_isEditingUsername) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF242426),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0x33FFFFFF),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  '@',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF8E8E93),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(minWidth: 100, maxWidth: 220),
+                                  child: TextField(
+                                    controller: _usernameController,
+                                    autofocus: true,
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontDisplay,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      hintText: 'юзернейм получателя',
+                                      hintStyle: TextStyle(
+                                        color: Color(0x66FFFFFF),
+                                        fontSize: 13,
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(vertical: 6),
+                                    ),
+                                    onChanged: (val) {
+                                      _effectiveUsername = val.trim().replaceFirst(RegExp(r'^@+'), '');
+                                    },
+                                    onSubmitted: (val) {
+                                      setState(() {
+                                        _effectiveUsername = val.trim().replaceFirst(RegExp(r'^@+'), '');
+                                        _isEditingUsername = false;
+                                      });
+                                    },
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _effectiveUsername = _usernameController.text.trim().replaceFirst(RegExp(r'^@+'), '');
+                                      _isEditingUsername = false;
+                                    });
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 4),
+                                    child: Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          child: Text(
-                            'Кому: $recipientName',
-                            style: const TextStyle(
-                              fontFamily: AppTheme.fontDisplay,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF8E8E93),
+                        ] else ...[
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _isEditingUsername = true;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF242426),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0x1AFFFFFF),
+                                  width: 1.0,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    (_effectiveUsername != null && _effectiveUsername!.isNotEmpty)
+                                        ? 'Кому: $recipientName (@$_effectiveUsername)'
+                                        : 'Кому: $recipientName (указать @юзернейм)',
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontDisplay,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(
+                                    Icons.edit_outlined,
+                                    size: 13,
+                                    color: Color(0xFF8E8E93),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                        ],
 
                         const SizedBox(height: 20),
 

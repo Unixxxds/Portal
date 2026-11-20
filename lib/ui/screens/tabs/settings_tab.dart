@@ -11,6 +11,8 @@ import '../../widgets/add_account_modal.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/badges.dart';
 import '../data_and_storage_screen.dart';
+import '../language_screen.dart';
+import '../notifications_and_sounds_screen.dart';
 
 class SettingsTab extends StatelessWidget {
   final VoidCallback onOpenProfile;
@@ -137,13 +139,6 @@ class SettingsTab extends StatelessWidget {
                 subtitle: 'Двухэтапная аутентификация',
                 onTap: () {},
               ),
-              _buildSettingTile(
-                icon: Icons.devices_rounded,
-                iconBg: const Color(0xFF34C759), // iOS System Green
-                title: 'Устройства и сессии',
-                subtitle: '1 активная сессия',
-                onTap: () {},
-              ),
             ]),
             const SizedBox(height: 24),
 
@@ -154,7 +149,14 @@ class SettingsTab extends StatelessWidget {
                 icon: Icons.notifications_rounded,
                 iconBg: const Color(0xFFFF3B30), // iOS System Red
                 title: 'Уведомления и звуки',
-                onTap: () {},
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationsAndSoundsScreen(),
+                    ),
+                  );
+                },
               ),
               _buildSettingTile(
                 icon: Icons.pie_chart_rounded,
@@ -170,18 +172,18 @@ class SettingsTab extends StatelessWidget {
                 },
               ),
               _buildSettingTile(
-                icon: Icons.palette_rounded,
-                iconBg: const Color(0xFF5856D6), // iOS System Indigo/Purple
-                title: 'Оформление',
-                trailingText: 'Portal Midnight',
-                onTap: () {},
-              ),
-              _buildSettingTile(
                 icon: Icons.language_rounded,
                 iconBg: const Color(0xFF30B0C7), // iOS System Teal
                 title: 'Язык',
                 trailingText: 'Русский',
-                onTap: () {},
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const LanguageScreen(),
+                    ),
+                  );
+                },
               ),
             ]),
             const SizedBox(height: 24),

@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/user_activity_helper.dart';
@@ -21,6 +23,7 @@ import '../widgets/profile_gift_bubbles_avatar.dart';
 import '../widgets/send_gift_modal.dart';
 import '../widgets/telegram_chat_route.dart';
 import 'chat_screen.dart';
+import '../../models/profile_color_theme.dart';
 import 'edit_profile_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
@@ -298,6 +301,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     } catch (_) {}
   }
 
+  String _formatSparks(int sparks) {
+    if (sparks <= 0) return '0';
+    return sparks.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]} ',
+    );
+  }
+
   String _formatSubscribersCount(int count) {
     if (count <= 0) return '0 подписчиков';
     final mod10 = count % 10;
@@ -486,10 +497,49 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
         ? (authUser?.isPremium ?? false)
         : (_userProfile?.isPremium ?? user?.isPremium ?? chat.isPremium);
 
+    final effectiveProfileColor = isCurrentUser
+        ? (authUser?.profileColor ?? _userProfile?.profileColor)
+        : (_userProfile?.profileColor ?? user?.profileColor);
+    final profileTheme = ProfileColorTheme.fromId(effectiveProfileColor);
+
     return Scaffold(
-      backgroundColor: const Color(0xFF090909),
+      backgroundColor: profileTheme.backgroundGradient.last,
       body: Stack(
         children: [
+          // Background Gradient matching Telegram profile from the photo
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: profileTheme.backgroundGradient,
+                  stops: profileTheme.stops,
+                ),
+              ),
+            ),
+          ),
+
+          // Subtle radial ambient bloom behind the avatar
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 340,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.0, -0.2),
+                  radius: 0.85,
+                  colors: [
+                    profileTheme.ambientGlow,
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+
           // ===================================================================
           // SCROLLABLE FULLSCREEN BODY (Edge-to-edge, NO SIDE BORDERS)
           // ===================================================================
@@ -504,67 +554,85 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Banner Image spanning full screen width (Supports animated GIF & WebP)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: 210,
-                      child: formattedBanner.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: formattedBanner,
-                              fit: BoxFit.cover,
-                              memCacheWidth: 800,
-                              placeholder: (context, url) => _buildDefaultBanner(),
-                              errorWidget: (context, url, error) => _buildDefaultBanner(),
-                              fadeInDuration: const Duration(milliseconds: 140),
-                              fadeOutDuration: const Duration(milliseconds: 140),
-                            )
-                          : _buildDefaultBanner(),
-                    ),
-
-                    // Top darkening gradient
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: 80,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0x99000000), Colors.transparent],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                    // Banner Image spanning full screen width with smooth fade at bottom
+                    if (formattedBanner.isNotEmpty) ...[
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 360,
+                        child: ShaderMask(
+                          shaderCallback: (rect) {
+                            return const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black,
+                                Colors.black,
+                                Colors.black87,
+                                Colors.black38,
+                                Colors.transparent,
+                              ],
+                              stops: [0.0, 0.45, 0.70, 0.88, 1.0],
+                            ).createShader(rect);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: CachedNetworkImage(
+                            imageUrl: formattedBanner,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 800,
+                            placeholder: (context, url) => _buildDefaultBanner(),
+                            errorWidget: (context, url, error) => _buildDefaultBanner(),
+                            fadeInDuration: const Duration(milliseconds: 140),
+                            fadeOutDuration: const Duration(milliseconds: 140),
                           ),
                         ),
                       ),
-                    ),
 
-                    // Bottom smooth gradient blur & fade into deep black background
-                    Positioned(
-                      bottom: 40,
-                      left: 0,
-                      right: 0,
-                      height: 110,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.transparent,
-                              Color(0x33090909),
-                              Color(0x80090909),
-                              Color(0xD9090909),
-                              Color(0xFF090909),
-                            ],
-                            stops: [0.0, 0.25, 0.55, 0.8, 1.0],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                      // Top darkening gradient
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 90,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0x80000000), Colors.transparent],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ] else ...[
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 360,
+                        child: ShaderMask(
+                          shaderCallback: (rect) {
+                            return const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black,
+                                Colors.black,
+                                Colors.black87,
+                                Colors.black38,
+                                Colors.transparent,
+                              ],
+                              stops: [0.0, 0.45, 0.70, 0.88, 1.0],
+                            ).createShader(rect);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: _buildDefaultBanner(),
+                        ),
+                      ),
+                    ],
 
-                    // Identity: Centered Avatar with Orbiting 3D Gift Bubbles
+                    // Identity: Centered Avatar with Orbiting 3D Gift Bubbles (без обводки)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -573,6 +641,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         child: ProfileGiftBubblesAvatar(
                           avatarRadius: 44,
                           gifts: _userGifts,
+                          showBorder: false,
                           onGiftTap: (gift) {
                             GiftDetailModal.show(
                               context,
@@ -593,7 +662,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                               avatarUrl: avatarUrl,
                               title: displayName,
                               size: 88,
-                              isOnline: isOnline,
+                              isOnline: false,
                               isSaved: chat.isSaved,
                             ),
                           ),
@@ -603,7 +672,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                   ],
                 ),
               ),
-              const SizedBox(height: 38),
+              const SizedBox(height: 6),
 
               // Name & Online Status (Centered directly under avatar)
               Center(
@@ -617,7 +686,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         children: [
                           // For users: verification badge (dev or user) is to the LEFT of the name
                           if (isVerified) ...[
-                            VerificationBadge(verification: verification, size: 23),
+                            VerificationBadge(verification: verification, size: 28),
                             const SizedBox(width: 6),
                           ],
                           Flexible(
@@ -641,7 +710,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           ],
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -673,6 +742,51 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           ),
                         ],
                       ),
+                      const SizedBox(height: 6),
+
+                      // Frosted glass Sparks balance capsule (ультра-прозрачная и стеклянная)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0x18FFFFFF), // Ультра-прозрачный стеклянный фон
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0x1FFFFFFF), // Тонкая полупрозрачная обводка
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SvgPicture.asset(
+                                  'lib/assets/premium.svg',
+                                  width: 14,
+                                  height: 14,
+                                  colorFilter: const ColorFilter.mode(
+                                    Colors.white,
+                                    BlendMode.srcIn,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${_formatSparks(user?.sparks ?? 0)} Sparks',
+                                  style: const TextStyle(
+                                    fontFamily: AppTheme.fontDisplay,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -683,88 +797,55 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                   position: _contentSlideAnim,
                   child: Column(
                     children: [
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
 
                       // ===============================================================
-                      // ACTION BUTTONS: "Написать" & "Звонок"
+                      // ACTION BUTTONS: "звонок", "написать", "поиск" (круглые, серые и поменьше)
                       // ===============================================================
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    // "Написать" Button (Graphite #191919)
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => Navigator.pop(context),
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF191919),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 18),
-                              SizedBox(width: 8),
-                              Text(
-                                'Написать',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (!isCurrentUser) ...[
-                      const SizedBox(width: 12),
-
-                      // "Звонок" Button (Graphite #191919)
-                      Expanded(
-                        child: InkWell(
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Аудиозвонок...')),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF191919),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.phone_outlined, color: Colors.white, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Звонок',
-                                  style: TextStyle(
-                                    fontFamily: AppTheme.fontText,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildRoundActionButton(
+                              icon: Icons.phone_rounded,
+                              label: 'звонок',
+                              backgroundColor: profileTheme.buttonColor,
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Аудиозвонок...'),
+                                    duration: Duration(seconds: 1),
+                                    behavior: SnackBarBehavior.floating,
                                   ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
-                          ),
+                            const SizedBox(width: 20),
+                            _buildRoundActionButton(
+                              svgAsset: 'lib/assets/chat.svg',
+                              label: 'написать',
+                              backgroundColor: profileTheme.buttonColor,
+                              onTap: () => Navigator.pop(context),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildRoundActionButton(
+                              icon: Icons.search_rounded,
+                              label: 'поиск',
+                              backgroundColor: profileTheme.buttonColor,
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Поиск по сообщениям'),
+                                    duration: Duration(seconds: 1),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ],
-                ),
-              ),
               const SizedBox(height: 18),
 
               // ===============================================================
@@ -805,12 +886,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         ),
                       ),
 
-                      // Сама скругленная плашка
+                      // Сама скругленная плашка (адаптируется к теме)
                       Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF191919),
+                          color: profileTheme.cardColor,
                           borderRadius: BorderRadius.circular(26),
-                          border: Border.all(color: const Color(0x1AFFFFFF), width: 1.0),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: Material(
@@ -907,42 +987,35 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
               ],
 
               // ===============================================================
-              // GROUPED CARD 1: О СЕБЕ / ИМЯ ПОЛЬЗОВАТЕЛЯ / ТЕЛЕФОН (Graphite)
+              // GROUPED CARD 1: О СЕБЕ / ИМЯ ПОЛЬЗОВАТЕЛЯ / ТЕЛЕФОН
               // ===============================================================
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF191919),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                  color: profileTheme.cardColor,
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: Column(
                   children: [
-                    // О СЕБЕ
+                    // о себе
                     _buildInfoRow(
-                      icon: Icons.info_outline_rounded,
-                      iconColor: const Color(0xFF929292),
-                      iconBg: const Color(0xFF242424),
-                      label: 'О СЕБЕ',
+                      label: 'о себе',
                       value: description,
                     ),
-                    const Divider(color: Color(0x14FFFFFF), height: 1, indent: 56),
+                    const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
 
-                    // ИМЯ ПОЛЬЗОВАТЕЛЯ & ДОП ЮЗЕРНЕЙМЫ
+                    // имя пользователя & доп юзернеймы
                     _buildUsernameRow(
                       username: username,
                       secondaryUsernames: secondaryUsernames,
                       verification: verification,
                       isVerified: isVerified,
                     ),
-                    const Divider(color: Color(0x14FFFFFF), height: 1, indent: 56),
+                    const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
 
-                    // НОМЕР ТЕЛЕФОНА
+                    // номер телефона
                     _buildInfoRow(
-                      icon: Icons.phone_rounded,
-                      iconColor: const Color(0xFF929292),
-                      iconBg: const Color(0xFF242424),
-                      label: 'НОМЕР ТЕЛЕФОНА',
+                      label: 'номер телефона',
                       value: phone,
                       isInteractive: true,
                       onTap: () => _copyToClipboard(phone, 'Номер телефона'),
@@ -953,14 +1026,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
               const SizedBox(height: 16),
 
               // ===============================================================
-              // GROUPED CARD 2: ПОЖАЛОВАТЬСЯ / ЗАБЛОКИРОВАТЬ (Graphite)
+              // GROUPED CARD 2: ПОЖАЛОВАТЬСЯ / ЗАБЛОКИРОВАТЬ
               // ===============================================================
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF191919),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0x1AFFFFFF), width: 1),
+                  color: profileTheme.cardColor,
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: Column(
                   children: [
@@ -971,7 +1043,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           const SnackBar(content: Text('Жалоба отправлена модераторам Portal')),
                         );
                       },
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         child: Row(
@@ -1007,7 +1079,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                     // Заблокировать
                     InkWell(
                       onTap: () => _showBlockDialog(context, displayName),
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(26)),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         child: Row(
@@ -1302,9 +1374,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
   }
 
   Widget _buildInfoRow({
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
     required String label,
     required String value,
     bool isInteractive = false,
@@ -1314,52 +1383,38 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFF242424),
-                borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF8E8E93),
+                ),
               ),
-              child: Icon(icon, color: const Color(0xFF929292), size: 18),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                      color: Color(0xFF929292),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value.isNotEmpty
-                        ? value
-                        : (label == 'О СЕБЕ'
-                            ? 'Информация о себе не указана'
-                            : (label == 'НОМЕР ТЕЛЕФОНА' ? '+7 999 000-00-00' : '')),
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: (value == 'Информация о себе не указана' || value.isEmpty)
-                          ? const Color(0xFF929292)
-                          : Colors.white,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 3),
+              Text(
+                value.isNotEmpty
+                    ? value
+                    : (label.toLowerCase() == 'о себе'
+                        ? 'Информация о себе не указана'
+                        : (label.toLowerCase() == 'номер телефона' ? '+7 999 000-00-00' : '')),
+                style: TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: (value == 'Информация о себе не указана' || value.isEmpty)
+                      ? const Color(0xFF8E8E93)
+                      : Colors.white,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1375,102 +1430,130 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       onTap: () => _copyToClipboard('@$username', 'Username'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFF242424),
-                borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'имя пользователя',
+                style: TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF8E8E93),
+                ),
               ),
-              child: const Icon(Icons.alternate_email_rounded, color: Color(0xFF929292), size: 18),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'ИМЯ ПОЛЬЗОВАТЕЛЯ',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                      color: Color(0xFF929292),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      if (isVerified)
-                        Container(
-                          margin: const EdgeInsets.only(right: 6),
-                          child: VerificationBadge(verification: verification, size: 18),
-                        ),
-                      Text(
-                        '@$username',
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+              const SizedBox(height: 3),
+              Text(
+                '@$username',
+                style: const TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.white,
+                ),
+              ),
+              if (secondaryUsernames.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'а также ',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 13,
+                        color: Color(0xFF8E8E93),
+                        fontWeight: FontWeight.w300,
                       ),
-                      const Spacer(),
-                      // Copy icon on far right
-                      InkWell(
-                        onTap: () => _copyToClipboard('@$username', 'Username'),
-                        borderRadius: BorderRadius.circular(6),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          child: Icon(
-                            Icons.copy_rounded,
-                            size: 17,
-                            color: Color(0xFF929292),
+                    ),
+                    for (int i = 0; i < secondaryUsernames.length; i++) ...[
+                      GestureDetector(
+                        onTap: () => _copyToClipboard('@${secondaryUsernames[i]}', 'Username'),
+                        child: Text(
+                          '@${secondaryUsernames[i]}${i < secondaryUsernames.length - 1 ? ', ' : ''}',
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 13,
+                            color: Color(0xFF8E8E93),
+                            fontWeight: FontWeight.w300,
                           ),
                         ),
                       ),
                     ],
-                  ),
-                  if (secondaryUsernames.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        const Text(
-                          'а также ',
-                          style: TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            fontSize: 13,
-                            color: Color(0xFF929292),
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        for (int i = 0; i < secondaryUsernames.length; i++) ...[
-                          GestureDetector(
-                            onTap: () => _copyToClipboard('@${secondaryUsernames[i]}', 'Username'),
-                            child: Text(
-                              '@${secondaryUsernames[i]}${i < secondaryUsernames.length - 1 ? ', ' : ''}',
-                              style: const TextStyle(
-                                fontFamily: AppTheme.fontText,
-                                fontSize: 13,
-                                color: Color(0xFF929292),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
                   ],
-                ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoundActionButton({
+    IconData? icon,
+    String? svgAsset,
+    required String label,
+    required VoidCallback? onTap,
+    Color? backgroundColor,
+  }) {
+    return SizedBox(
+      width: 66,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              splashColor: Colors.white.withOpacity(0.12),
+              highlightColor: Colors.white.withOpacity(0.06),
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: backgroundColor ?? const Color(0xFF262626),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: svgAsset != null
+                      ? SvgPicture.asset(
+                          svgAsset,
+                          width: 22,
+                          height: 22,
+                          colorFilter: const ColorFilter.mode(
+                            Colors.white,
+                            BlendMode.srcIn,
+                          ),
+                        )
+                      : (icon != null
+                          ? Icon(
+                              icon,
+                              color: Colors.white,
+                              size: 21,
+                            )
+                          : const SizedBox.shrink()),
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              fontFamily: AppTheme.fontText,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }

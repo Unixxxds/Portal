@@ -103,6 +103,7 @@ class ProfileGiftBubblesAvatar extends StatefulWidget {
   final VoidCallback? onAvatarTap;
   final void Function(UserGift gift)? onGiftTap;
   final bool enableAutoDemo;
+  final bool showBorder;
 
   const ProfileGiftBubblesAvatar({
     super.key,
@@ -112,6 +113,7 @@ class ProfileGiftBubblesAvatar extends StatefulWidget {
     this.onAvatarTap,
     this.onGiftTap,
     this.enableAutoDemo = true,
+    this.showBorder = false,
   });
 
   @override
@@ -147,7 +149,14 @@ class _ProfileGiftBubblesAvatarState extends State<ProfileGiftBubblesAvatar>
   void initState() {
     super.initState();
     _rebuildBubbles();
-    _ticker = createTicker(_onTick)..start();
+    _ticker = createTicker(_onTick);
+    // Delay ticker start until route transition completes (350 ms)
+    // so weak phones don't stutter during the screen opening animation!
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted && !_ticker.isActive) {
+        _ticker.start();
+      }
+    });
   }
 
   @override
@@ -161,6 +170,9 @@ class _ProfileGiftBubblesAvatarState extends State<ProfileGiftBubblesAvatar>
 
   @override
   void dispose() {
+    if (_ticker.isActive) {
+      _ticker.stop();
+    }
     _ticker.dispose();
     super.dispose();
   }
@@ -556,6 +568,18 @@ class _ProfileGiftBubblesAvatarState extends State<ProfileGiftBubblesAvatar>
 
   /// Dark-Glass Halo Ring sampled 1:1 from the original video prototype
   Widget _buildAvatarWithHalo(Widget child, double avR) {
+    if (!widget.showBorder) {
+      return Container(
+        width: avR * 2,
+        height: avR * 2,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+    }
+
     const haloPadding = 5.0; // 5-7px dark glass halo rim
     final outerD = (avR + haloPadding) * 2;
 
@@ -614,31 +638,33 @@ class _ProfileGiftBubblesAvatarState extends State<ProfileGiftBubblesAvatar>
       top: center.dy + b.y - boxH / 2,
       width: boxW,
       height: boxH,
-      child: IgnorePointer(
-        child: CustomPaint(
-          size: Size(boxW, boxH),
-          painter: BubbleBackgroundPainter(
-            bubble: b,
-            contourPoints: pts,
-            simTime: _simTime,
-          ),
-          foregroundPainter: BubbleForegroundPainter(
-            bubble: b,
-            contourPoints: pts,
-            simTime: _simTime,
-          ),
-          child: Center(
-            child: Transform.translate(
-              offset: Offset(b.giftOffsetX, b.giftOffsetY),
-              child: Transform.rotate(
-                angle: b.giftTilt,
-                child: SizedBox(
-                  width: b.r * 1.48,
-                  height: b.r * 1.48,
-                  child: GiftModelWidget(
-                    gift: b.gift,
-                    size: b.r * 1.48,
-                    animate: b.isHero,
+      child: RepaintBoundary(
+        child: IgnorePointer(
+          child: CustomPaint(
+            size: Size(boxW, boxH),
+            painter: BubbleBackgroundPainter(
+              bubble: b,
+              contourPoints: pts,
+              simTime: _simTime,
+            ),
+            foregroundPainter: BubbleForegroundPainter(
+              bubble: b,
+              contourPoints: pts,
+              simTime: _simTime,
+            ),
+            child: Center(
+              child: Transform.translate(
+                offset: Offset(b.giftOffsetX, b.giftOffsetY),
+                child: Transform.rotate(
+                  angle: b.giftTilt,
+                  child: SizedBox(
+                    width: b.r * 1.48,
+                    height: b.r * 1.48,
+                    child: GiftModelWidget(
+                      gift: b.gift,
+                      size: b.r * 1.48,
+                      animate: b.isHero,
+                    ),
                   ),
                 ),
               ),
