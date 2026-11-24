@@ -391,19 +391,7 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: Container(
               constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
-              decoration: BoxDecoration(
-                color: AppTheme.authCardBg,
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: AppTheme.authCardBorder, width: 1),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0xCC000000),
-                    blurRadius: 50,
-                    offset: Offset(0, 20),
-                  ),
-                ],
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 switchInCurve: Curves.easeOutCubic,
@@ -623,42 +611,37 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
-        // Brand Logo
+        // Lottie animated check email sticker (Telegram style)
         Center(
-          child: Image.asset(
-            'lib/assets/logo.png',
-            height: 44,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppTheme.accentBlue,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.flash_on, color: Colors.white, size: 24),
+          child: SizedBox(
+            width: 130,
+            height: 130,
+            child: Lottie.asset(
+              'lib/assets/check_email.json',
+              fit: BoxFit.contain,
+              repeat: true,
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
 
         const Text(
           'Код подтверждения',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.4,
             color: Colors.white,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         RichText(
           textAlign: TextAlign.center,
           text: TextSpan(
-            style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93), height: 1.45),
+            style: const TextStyle(fontSize: 13.5, color: Color(0xFF8E8E93), height: 1.45),
             children: [
               const TextSpan(text: 'Мы отправили проверочный код на\n'),
               TextSpan(
@@ -668,9 +651,9 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 28),
 
-        // 6 digit code input with bulletproof typing & backspace handling
+        // 6 digit code input with large boxes & bulletproof typing/backspace
         GestureDetector(
           onTap: () {
             _codeUnifiedFocusNode.requestFocus();
@@ -679,7 +662,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Visual boxes
+              // Large visual boxes
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(6, (index) {
@@ -690,26 +673,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       (index == code.length || (index == 5 && code.length == 6));
 
                   return Container(
-                    width: 44,
-                    height: 52,
-                    margin: EdgeInsets.only(right: index == 5 ? 0 : 7),
+                    width: 48,
+                    height: 58,
+                    margin: EdgeInsets.only(right: index == 5 ? 0 : 8),
                     decoration: BoxDecoration(
-                      color: AppTheme.authInputBg,
-                      borderRadius: BorderRadius.circular(12),
+                      color: const Color(0xFF161616),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(
                         color: errorMessage != null
                             ? const Color(0xFFFF453A)
                             : (isFocused
                                 ? Colors.white
-                                : (hasChar ? Colors.white.withOpacity(0.8) : AppTheme.authInputBorder)),
-                        width: isFocused ? 1.6 : 1.2,
+                                : (hasChar ? Colors.white.withOpacity(0.85) : const Color(0x2EFFFFFF))),
+                        width: isFocused ? 1.8 : 1.2,
                       ),
                       boxShadow: isFocused
                           ? [
                               BoxShadow(
-                                color: Colors.white.withOpacity(0.12),
-                                blurRadius: 6,
-                                offset: const Offset(0, 1),
+                                color: Colors.white.withOpacity(0.18),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
                             ]
                           : null,
@@ -719,7 +702,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         char,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 22,
+                          fontSize: 24,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -750,7 +733,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 22),
 
         if (errorMessage != null) ...[
           Text(
@@ -765,7 +748,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 16),
         ],
 
-        // Submit button
+        // Maximally rounded Continue button
         SizedBox(
           width: double.infinity,
           height: 52,
@@ -784,41 +767,41 @@ class _LoginScreenState extends State<LoginScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.black),
                   )
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Войти',
+                        'Продолжить',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.2,
                         ),
                       ),
                       SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
+                      Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
                     ],
                   ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
         // Resend countdown
         if (_countdown > 0)
           Text(
             'Повторно через $_countdown с',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+            style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
           )
         else
-          TextButton(
-            onPressed: auth.isLoading ? null : _handleSendCode,
+          GestureDetector(
+            onTap: auth.isLoading ? null : _handleSendCode,
             child: const Text(
               'Отправить код повторно',
               style: TextStyle(
-                color: AppTheme.accentBlue,
-                fontSize: 13,
+                color: Color(0xFF3B98FF),
+                fontSize: 13.5,
                 fontWeight: FontWeight.w500,
               ),
             ),
