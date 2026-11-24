@@ -293,6 +293,9 @@ class DatabaseHelper {
       if (!chatCols.contains('members_count')) {
         await db.execute("ALTER TABLE chats ADD COLUMN members_count INTEGER DEFAULT 0;");
       }
+      if (!chatCols.contains('is_group')) {
+        await db.execute("ALTER TABLE chats ADD COLUMN is_group INTEGER DEFAULT 0;");
+      }
 
       final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
           .map((e) => e['name']?.toString())

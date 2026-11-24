@@ -106,10 +106,7 @@ class Chat {
       title.toLowerCase().contains('избранное') ||
       title.toLowerCase().contains('сохранен') ||
       title.toLowerCase() == 'saved messages';
-  bool get isGroup =>
-      isGroupChat ||
-      type == 'group' ||
-      (!isChannel && !isSaved && !isDirect && ownerId != null);
+  bool get isGroup => isGroupChat || type == 'group';
   bool get isDirect =>
       !isChannel && !isSaved && !isGroup && (type == 'direct' || type == 'dialog' || type == 'private');
 
@@ -395,6 +392,7 @@ class Chat {
       'is_premium': isPremium ? 1 : 0,
       'subscribers_count': subscribersCount,
       'members_count': membersCount,
+      'is_group': isGroup ? 1 : 0,
       'is_subscribed': isSubscribed ? 1 : 0,
       'artifacts': artifacts,
       'invite_code': inviteCode,
