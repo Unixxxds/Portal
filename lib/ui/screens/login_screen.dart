@@ -839,17 +839,16 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 12),
 
-        // Key icon badge (52x52 rounded)
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: const Color(0x0FFFFFFF),
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: const Color(0x1FFFFFFF), width: 1),
-          ),
-          child: const Center(
-            child: Icon(Icons.key_rounded, color: Colors.white, size: 24),
+        // Lottie animated key sticker (Telegram style)
+        Center(
+          child: SizedBox(
+            width: 124,
+            height: 124,
+            child: Lottie.asset(
+              'lib/assets/key.json',
+              fit: BoxFit.contain,
+              repeat: true,
+            ),
           ),
         ),
         const SizedBox(height: 18),
