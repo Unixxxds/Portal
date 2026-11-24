@@ -33,6 +33,7 @@ class ChatProvider with ChangeNotifier {
   final Set<int> _pendingReactionToggles = {};
 
   StreamSubscription? _wsSubscription;
+  Future<void>? _ongoingSync;
 
   List<Chat> get chats => _chats;
   int? get activeChatId => _activeChatId;
@@ -63,9 +64,9 @@ class ChatProvider with ChangeNotifier {
     return _userPresence[userId] ?? false;
   }
 
-  void init() {
+  void init({Function(User)? onUserLoaded}) {
     _listenToWebSocket();
-    loadLocalData();
+    loadLocalData(onUserLoaded: onUserLoaded);
   }
 
   void _listenToWebSocket() {
@@ -75,7 +76,7 @@ class ChatProvider with ChangeNotifier {
     });
   }
 
-  Future<void> loadLocalData() async {
+  Future<void> loadLocalData({Function(User)? onUserLoaded}) async {
     _isLoading = true;
     notifyListeners();
 
@@ -85,14 +86,29 @@ class ChatProvider with ChangeNotifier {
       debugPrint('Error loading local chats: $e');
     }
 
-    _isLoading = false;
-    notifyListeners();
+    // If local chats are empty (e.g. freshly logged in account), keep _isLoading = true
+    // until syncBootstrap completes so "Нет активных чатов" is not prematurely displayed!
+    if (_chats.isNotEmpty) {
+      _isLoading = false;
+      notifyListeners();
+    }
 
     // Запускаем фоновый Fast Sync Bootstrap
-    syncBootstrap();
+    await syncBootstrap(onUserLoaded: onUserLoaded);
+
+    _isLoading = false;
+    notifyListeners();
   }
 
-  Future<void> syncBootstrap({Function(User)? onUserLoaded}) async {
+  Future<void> syncBootstrap({Function(User)? onUserLoaded}) {
+    if (_isSyncing && _ongoingSync != null) {
+      return _ongoingSync!;
+    }
+    _ongoingSync = _executeSyncBootstrap(onUserLoaded: onUserLoaded);
+    return _ongoingSync!;
+  }
+
+  Future<void> _executeSyncBootstrap({Function(User)? onUserLoaded}) async {
     _isSyncing = true;
     _syncError = null;
     notifyListeners();
@@ -104,12 +120,30 @@ class ChatProvider with ChangeNotifier {
         final chatsData = data['chats'] as List? ?? [];
         final messagesData = data['recent_messages'] as Map<String, dynamic>? ?? {};
 
-        if (userData != null && userData is Map<String, dynamic> && onUserLoaded != null) {
+        if (userData != null && userData is Map<String, dynamic>) {
           final user = User.fromJson(userData);
-          onUserLoaded(user);
+          if (user.id > 0) {
+            await DatabaseHelper.setActiveUserId(user.id);
+          }
+          if (onUserLoaded != null) {
+            onUserLoaded(user);
+          }
         }
 
-        // Сохраняем в SQLite в одной быстрой транзакции
+        // 1. Immediately hydrate in-memory chats so UI updates instantly without waiting for SQLite
+        if (chatsData.isNotEmpty) {
+          final inMemoryChats = chatsData
+              .whereType<Map<String, dynamic>>()
+              .map((m) => Chat.fromJson(m))
+              .toList();
+          if (inMemoryChats.isNotEmpty) {
+            _chats = inMemoryChats;
+            _isLoading = false;
+            notifyListeners();
+          }
+        }
+
+        // 2. Сохраняем в SQLite в одной быстрой транзакции
         await DatabaseHelper.instance.saveBootstrap(
           user: userData is Map<String, dynamic> ? userData : {},
           chats: chatsData,
@@ -117,8 +151,11 @@ class ChatProvider with ChangeNotifier {
           activeChatId: _activeChatId,
         );
 
-        // Перезагружаем список чатов из локальной БД
-        _chats = await DatabaseHelper.instance.getChats();
+        // 3. Перезагружаем список чатов из локальной БД
+        final localRefreshed = await DatabaseHelper.instance.getChats();
+        if (localRefreshed.isNotEmpty || _chats.isEmpty) {
+          _chats = localRefreshed;
+        }
 
         // Если активен какой-то чат, перезагружаем его сообщения
         if (_activeChatId != null) {
@@ -135,10 +172,12 @@ class ChatProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('Bootstrap sync error: $e');
       _syncError = e.toString();
+    } finally {
+      _isSyncing = false;
+      _isLoading = false;
+      _ongoingSync = null;
+      notifyListeners();
     }
-
-    _isSyncing = false;
-    notifyListeners();
   }
 
   Future<void> switchAccountData({Function(User)? onUserLoaded}) async {

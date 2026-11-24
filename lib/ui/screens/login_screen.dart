@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,6 +18,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
+  final _codeUnifiedController = TextEditingController();
+  final _codeUnifiedFocusNode = FocusNode();
   final List<TextEditingController> _digitControllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _digitFocusNodes = List.generate(6, (_) => FocusNode());
@@ -38,6 +41,16 @@ class _LoginScreenState extends State<LoginScreen> {
     _firstNameController.addListener(() {
       if (mounted) setState(() {});
     });
+    _codeUnifiedController.addListener(() {
+      final text = _codeUnifiedController.text;
+      for (int i = 0; i < 6; i++) {
+        _digitControllers[i].text = i < text.length ? text[i] : '';
+      }
+      if (mounted) setState(() {});
+      if (text.length == 6) {
+        _handleVerifyCode();
+      }
+    });
     for (int i = 0; i < 6; i++) {
       final index = i;
       _digitControllers[index].addListener(() {
@@ -51,6 +64,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _emailController.dispose();
+    _codeUnifiedController.dispose();
+    _codeUnifiedFocusNode.dispose();
     for (final c in _digitControllers) {
       c.dispose();
     }
@@ -95,6 +110,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String _getCode() {
+    final unified = _codeUnifiedController.text.trim();
+    if (unified.isNotEmpty) return unified;
     return _digitControllers.map((c) => c.text.trim()).join();
   }
 
@@ -113,12 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (success) {
+      _codeUnifiedController.clear();
       for (final c in _digitControllers) {
         c.clear();
       }
       _startCountdown();
       Future.delayed(const Duration(milliseconds: 150), () {
-        if (mounted) _digitFocusNodes[0].requestFocus();
+        if (mounted) _codeUnifiedFocusNode.requestFocus();
       });
     } else {
       setState(() => _localError = auth.errorMessage ?? 'Не удалось отправить код');
@@ -138,7 +156,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final success = await auth.verifyCode(email, code);
     if (!mounted) return;
 
-    if (!success) {
+    if (success) {
+      if (mounted) {
+        context.read<ChatProvider>().init();
+      }
+    } else {
       setState(() => _localError = auth.errorMessage ?? 'Неверный код подтверждения');
     }
   }
@@ -156,7 +178,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final success = await auth.verifyCloudPassword(email, password);
     if (!mounted) return;
 
-    if (!success) {
+    if (success) {
+      if (mounted) {
+        context.read<ChatProvider>().init();
+      }
+    } else {
       setState(() => _localError = auth.errorMessage ?? 'Неверный облачный пароль');
     }
   }
@@ -247,7 +273,11 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (!mounted) return;
 
-    if (!success) {
+    if (success) {
+      if (mounted) {
+        context.read<ChatProvider>().init();
+      }
+    } else {
       setState(() => _localError = auth.errorMessage ?? 'Не удалось сохранить профиль');
     }
   }
@@ -256,6 +286,102 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final errorMessage = _localError ?? auth.errorMessage;
+
+    // 1. Welcome Screen: completely borderless, underlay-free, centered with bottom continue button
+    if (_showWelcomeScreen && auth.step == AuthStep.email) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF000000),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: Column(
+              children: [
+                const Spacer(flex: 3),
+                // Brand Logo
+                Center(
+                  child: Image.asset(
+                    'lib/assets/logo.png',
+                    height: 84,
+                    width: 84,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 84,
+                      height: 84,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentBlue,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: const Icon(Icons.flash_on, color: Colors.white, size: 38),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                const Text(
+                  'Добро пожаловать в Portal',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Быстрый, приватный и технологичный\nмессенджер нового поколения',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    color: Color(0xFF8E8E93),
+                    height: 1.45,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const Spacer(flex: 4),
+
+                // Maximally rounded white Continue button at the bottom
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _localError = null;
+                        _showWelcomeScreen = false;
+                      });
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Продолжить',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
@@ -298,112 +424,9 @@ class _LoginScreenState extends State<LoginScreen> {
       return _buildCloudPasswordView(auth, errorMessage);
     } else if (auth.step == AuthStep.code) {
       return _buildCodeView(auth, errorMessage);
-    } else if (_showWelcomeScreen) {
-      return _buildWelcomeView(auth);
     } else {
       return _buildEmailInputView(auth, errorMessage);
     }
-  }
-
-  Widget _buildWelcomeView(AuthProvider auth) {
-    return Column(
-      key: const ValueKey('welcome_view'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 10),
-
-        // Brand Logo container
-        Container(
-          width: 76,
-          height: 76,
-          decoration: BoxDecoration(
-            color: const Color(0xFF161616),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0x26FFFFFF), width: 1),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x4D000000),
-                blurRadius: 24,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(15),
-          child: Image.asset(
-            'lib/assets/portal.png',
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => Container(
-              decoration: BoxDecoration(
-                color: AppTheme.accentBlue,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.flash_on, color: Colors.white, size: 28),
-            ),
-          ),
-        ),
-        const SizedBox(height: 28),
-
-        const Text(
-          'Добро пожаловать в Portal',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
-            color: Colors.white,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Быстрый, приватный и технологичный\nмессенджер нового поколения',
-          style: TextStyle(
-            fontSize: 13.5,
-            color: Color(0xFF8E8E93),
-            height: 1.45,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 36),
-
-        // Maximally rounded Continue button
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _localError = null;
-                _showWelcomeScreen = false;
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Продолжить',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-      ],
-    );
   }
 
   Widget _buildEmailInputView(AuthProvider auth, String? errorMessage) {
@@ -571,6 +594,7 @@ class _LoginScreenState extends State<LoginScreen> {
               setState(() {
                 _localError = null;
                 _showWelcomeScreen = false;
+                _codeUnifiedController.clear();
               });
               auth.resetToEmailStep();
             },
@@ -604,7 +628,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Brand Logo
         Center(
           child: Image.asset(
-            'lib/assets/portal.png',
+            'lib/assets/logo.png',
             height: 44,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => Container(
@@ -646,60 +670,85 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
 
-        // 6 digit code boxes
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(6, (index) {
-            final hasValue = _digitControllers[index].text.isNotEmpty;
-            return Container(
-              width: 44,
-              height: 52,
-              margin: EdgeInsets.only(right: index == 5 ? 0 : 7),
-              decoration: BoxDecoration(
-                color: AppTheme.authInputBg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: errorMessage != null
-                      ? const Color(0xFFFF453A)
-                      : (hasValue ? Colors.white : AppTheme.authInputBorder),
-                  width: 1.2,
+        // 6 digit code input with bulletproof typing & backspace handling
+        GestureDetector(
+          onTap: () {
+            _codeUnifiedFocusNode.requestFocus();
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Visual boxes
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(6, (index) {
+                  final code = _codeUnifiedController.text;
+                  final hasChar = index < code.length;
+                  final char = hasChar ? code[index] : '';
+                  final isFocused = _codeUnifiedFocusNode.hasFocus &&
+                      (index == code.length || (index == 5 && code.length == 6));
+
+                  return Container(
+                    width: 44,
+                    height: 52,
+                    margin: EdgeInsets.only(right: index == 5 ? 0 : 7),
+                    decoration: BoxDecoration(
+                      color: AppTheme.authInputBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: errorMessage != null
+                            ? const Color(0xFFFF453A)
+                            : (isFocused
+                                ? Colors.white
+                                : (hasChar ? Colors.white.withOpacity(0.8) : AppTheme.authInputBorder)),
+                        width: isFocused ? 1.6 : 1.2,
+                      ),
+                      boxShadow: isFocused
+                          ? [
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.12),
+                                blurRadius: 6,
+                                offset: const Offset(0, 1),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Center(
+                      child: Text(
+                        char,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+
+              // Transparent overlay TextField capturing typing, backspaces, and clipboard paste
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.0,
+                  child: TextField(
+                    controller: _codeUnifiedController,
+                    focusNode: _codeUnifiedFocusNode,
+                    keyboardType: TextInputType.number,
+                    autofocus: true,
+                    autofillHints: const [AutofillHints.oneTimeCode],
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    cursorWidth: 0.001,
+                    enableInteractiveSelection: false,
+                  ),
                 ),
               ),
-              child: Center(
-                child: TextField(
-                  controller: _digitControllers[index],
-                  focusNode: _digitFocusNodes[index],
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  maxLength: 1,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  onChanged: (val) {
-                    setState(() {});
-                    if (val.isNotEmpty) {
-                      if (index < 5) {
-                        _digitFocusNodes[index + 1].requestFocus();
-                      } else {
-                        _digitFocusNodes[index].unfocus();
-                        _handleVerifyCode();
-                      }
-                    } else if (val.isEmpty && index > 0) {
-                      _digitFocusNodes[index - 1].requestFocus();
-                    }
-                  },
-                ),
-              ),
-            );
-          }),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
 

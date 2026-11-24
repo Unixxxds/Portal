@@ -29,8 +29,7 @@ class _MainScreenState extends State<MainScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final chatProvider = context.read<ChatProvider>();
       final authProvider = context.read<AuthProvider>();
-      chatProvider.init();
-      chatProvider.syncBootstrap(onUserLoaded: (user) {
+      chatProvider.init(onUserLoaded: (user) {
         authProvider.setCurrentUser(user);
       });
     });

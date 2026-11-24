@@ -76,7 +76,7 @@ class _AuthGateState extends State<AuthGate> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
-                  'assets/images/portal-logo.png',
+                  'lib/assets/logo.png',
                   height: 56,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(

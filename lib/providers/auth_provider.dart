@@ -153,6 +153,8 @@ class AuthProvider with ChangeNotifier {
           notifyListeners();
 
           WebSocketService.instance.connect();
+          _listenWs();
+          PushNotificationService.instance.requestPermissionAndRegister();
           return true;
         }
       }
@@ -214,6 +216,8 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
 
         WebSocketService.instance.connect();
+        _listenWs();
+        PushNotificationService.instance.requestPermissionAndRegister();
         return true;
       } else {
         throw Exception(res['error'] ?? 'Неверный облачный пароль');
