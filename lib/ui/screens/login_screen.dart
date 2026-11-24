@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../theme.dart';
@@ -25,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _bioController = TextEditingController();
   String? _setupAvatarPath;
 
+  bool _showWelcomeScreen = true;
   bool _obscureCloudPassword = true;
   int _countdown = 0;
   Timer? _timer;
@@ -263,10 +265,10 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: Container(
               constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
               decoration: BoxDecoration(
                 color: AppTheme.authCardBg,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(28),
                 border: Border.all(color: AppTheme.authCardBorder, width: 1),
                 boxShadow: const [
                   BoxShadow(
@@ -276,36 +278,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Portal Brand Logo
-                  Image.asset(
-                    'lib/assets/portal.png',
-                    height: 48,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentBlue,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(Icons.flash_on, color: Colors.white, size: 28),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-
-                  if (auth.step == AuthStep.profileSetup) ...[
-                    _buildProfileSetupView(auth, errorMessage),
-                  ] else if (auth.step == AuthStep.cloudPassword) ...[
-                    _buildCloudPasswordView(auth, errorMessage),
-                  ] else if (auth.step == AuthStep.code) ...[
-                    _buildCodeView(auth, errorMessage),
-                  ] else ...[
-                    _buildEmailInputView(auth, errorMessage),
-                  ],
-                ],
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: _buildCurrentAuthView(auth, errorMessage),
               ),
             ),
           ),
@@ -314,22 +291,71 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildEmailInputView(AuthProvider auth, String? errorMessage) {
+  Widget _buildCurrentAuthView(AuthProvider auth, String? errorMessage) {
+    if (auth.step == AuthStep.profileSetup) {
+      return _buildProfileSetupView(auth, errorMessage);
+    } else if (auth.step == AuthStep.cloudPassword) {
+      return _buildCloudPasswordView(auth, errorMessage);
+    } else if (auth.step == AuthStep.code) {
+      return _buildCodeView(auth, errorMessage);
+    } else if (_showWelcomeScreen) {
+      return _buildWelcomeView(auth);
+    } else {
+      return _buildEmailInputView(auth, errorMessage);
+    }
+  }
+
+  Widget _buildWelcomeView(AuthProvider auth) {
     return Column(
+      key: const ValueKey('welcome_view'),
+      mainAxisSize: MainAxisSize.min,
       children: [
+        const SizedBox(height: 10),
+
+        // Brand Logo container
+        Container(
+          width: 76,
+          height: 76,
+          decoration: BoxDecoration(
+            color: const Color(0xFF161616),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0x26FFFFFF), width: 1),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x4D000000),
+                blurRadius: 24,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(15),
+          child: Image.asset(
+            'lib/assets/portal.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => Container(
+              decoration: BoxDecoration(
+                color: AppTheme.accentBlue,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.flash_on, color: Colors.white, size: 28),
+            ),
+          ),
+        ),
+        const SizedBox(height: 28),
+
         const Text(
-          'Вход в Portal',
+          'Добро пожаловать в Portal',
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
+            letterSpacing: -0.4,
             color: Colors.white,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         const Text(
-          'Введите ваш e-mail для входа или быстрой регистрации',
+          'Быстрый, приватный и технологичный\nмессенджер нового поколения',
           style: TextStyle(
             fontSize: 13.5,
             color: Color(0xFF8E8E93),
@@ -337,31 +363,114 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 36),
 
-        // Input label
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'ЭЛЕКТРОННАЯ ПОЧТА',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-              color: Color(0xFF71717A),
+        // Maximally rounded Continue button
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _localError = null;
+                _showWelcomeScreen = false;
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Продолжить',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
+      ],
+    );
+  }
 
-        // Email textfield
+  Widget _buildEmailInputView(AuthProvider auth, String? errorMessage) {
+    return Column(
+      key: const ValueKey('email_view'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Back button to return to Welcome
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _localError = null;
+                _showWelcomeScreen = true;
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0x14FFFFFF),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.arrow_back_ios_new_rounded, size: 12, color: Color(0xFF8E8E93)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Назад',
+                    style: TextStyle(
+                      color: Color(0xFF8E8E93),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Lottie animated email emoji/sticker in the center (Telegram style)
+        Center(
+          child: SizedBox(
+            width: 124,
+            height: 124,
+            child: Lottie.asset(
+              'lib/assets/email.json',
+              fit: BoxFit.contain,
+              repeat: true,
+            ),
+          ),
+        ),
+        const SizedBox(height: 26),
+
+        // Maximally rounded email input in the middle
         Container(
+          height: 52,
           decoration: BoxDecoration(
-            color: AppTheme.authInputBg,
-            borderRadius: BorderRadius.circular(13),
+            color: const Color(0xFF161616),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: errorMessage != null ? const Color(0xFFFF453A) : AppTheme.authInputBorder,
-              width: 1,
+              color: errorMessage != null ? const Color(0xFFFF453A) : const Color(0x2BFFFFFF),
+              width: 1.2,
             ),
           ),
           child: TextField(
@@ -375,10 +484,18 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             decoration: const InputDecoration(
               hintText: 'name@example.com',
-              hintStyle: TextStyle(color: Color(0xFF636366), fontSize: 16),
+              hintStyle: TextStyle(
+                color: Color(0xFF636366),
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+              ),
               border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              suffixIcon: Icon(Icons.mail_outline_rounded, color: Color(0xFF636366), size: 19),
+              contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              prefixIcon: Padding(
+                padding: EdgeInsets.only(left: 18, right: 10),
+                child: Icon(Icons.mail_outline_rounded, color: Color(0xFF8E8E93), size: 20),
+              ),
+              prefixIconConstraints: BoxConstraints(minWidth: 48),
             ),
             onSubmitted: (_) => _handleSendCode(),
           ),
@@ -398,10 +515,10 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 16),
         ],
 
-        // Submit Button (iOS White Button style)
+        // Maximally rounded continue button
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 52,
           child: ElevatedButton(
             onPressed: auth.isLoading ? null : _handleSendCode,
             style: ElevatedButton.styleFrom(
@@ -410,14 +527,14 @@ class _LoginScreenState extends State<LoginScreen> {
               disabledBackgroundColor: Colors.white.withOpacity(0.5),
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             child: auth.isLoading
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.black),
                   )
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -425,17 +542,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'Продолжить',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.2,
                         ),
                       ),
                       SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
+                      Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
                     ],
                   ),
           ),
         ),
+        const SizedBox(height: 6),
       ],
     );
   }
@@ -450,19 +568,31 @@ class _LoginScreenState extends State<LoginScreen> {
           alignment: Alignment.centerLeft,
           child: GestureDetector(
             onTap: () {
-              setState(() => _localError = null);
+              setState(() {
+                _localError = null;
+                _showWelcomeScreen = false;
+              });
               auth.resetToEmailStep();
             },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4),
-              child: Row(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0x14FFFFFF),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
+              ),
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.chevron_left_rounded, color: Color(0xFF8E8E93), size: 20),
-                  SizedBox(width: 2),
+                  Icon(Icons.arrow_back_ios_new_rounded, size: 12, color: Color(0xFF8E8E93)),
+                  SizedBox(width: 4),
                   Text(
                     'Назад',
-                    style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13),
+                    style: TextStyle(
+                      color: Color(0xFF8E8E93),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -470,6 +600,25 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 12),
+
+        // Brand Logo
+        Center(
+          child: Image.asset(
+            'lib/assets/portal.png',
+            height: 44,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppTheme.accentBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.flash_on, color: Colors.white, size: 24),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
 
         const Text(
           'Код подтверждения',
@@ -570,7 +719,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Submit button
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 52,
           child: ElevatedButton(
             onPressed: auth.isLoading || _getCode().length < 6 ? null : _handleVerifyCode,
             style: ElevatedButton.styleFrom(
@@ -579,7 +728,7 @@ class _LoginScreenState extends State<LoginScreen> {
               disabledBackgroundColor: Colors.white.withOpacity(0.35),
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             child: auth.isLoading
@@ -730,12 +879,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // Password input
         Container(
+          height: 52,
           decoration: BoxDecoration(
-            color: AppTheme.authInputBg,
-            borderRadius: BorderRadius.circular(13),
+            color: const Color(0xFF161616),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: errorMessage != null ? const Color(0xFFFF453A) : AppTheme.authInputBorder,
-              width: 1,
+              color: errorMessage != null ? const Color(0xFFFF453A) : const Color(0x2BFFFFFF),
+              width: 1.2,
             ),
           ),
           child: TextField(
@@ -743,14 +893,14 @@ class _LoginScreenState extends State<LoginScreen> {
             obscureText: _obscureCloudPassword,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
             decoration: InputDecoration(
               hintText: 'Введите пароль',
               hintStyle: const TextStyle(color: Color(0xFF636366), fontSize: 15),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureCloudPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
@@ -781,7 +931,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Verify button
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 52,
           child: ElevatedButton(
             onPressed: auth.isLoading ? null : _handleVerifyCloudPassword,
             style: ElevatedButton.styleFrom(
@@ -790,7 +940,7 @@ class _LoginScreenState extends State<LoginScreen> {
               disabledBackgroundColor: Colors.white.withOpacity(0.35),
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             child: auth.isLoading
@@ -1079,7 +1229,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Submit Button
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 52,
           child: ElevatedButton(
             onPressed: canProceed ? _handleCompleteProfileSetup : null,
             style: ElevatedButton.styleFrom(
@@ -1088,7 +1238,7 @@ class _LoginScreenState extends State<LoginScreen> {
               disabledBackgroundColor: Colors.white.withOpacity(0.35),
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             child: auth.isLoading
