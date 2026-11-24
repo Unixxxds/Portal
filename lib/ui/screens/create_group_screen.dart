@@ -292,9 +292,13 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSubmitting = false);
+      String errorMsg = e.toString().replaceAll('Exception: ', '');
+      if (errorMsg.contains('502') || errorMsg.contains('status code of 502')) {
+        errorMsg = 'Сервер временно недоступен (502 Bad Gateway). Обновите и перезапустите бэкенд на сервере.';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
+          content: Text(errorMsg),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF2C1515),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
