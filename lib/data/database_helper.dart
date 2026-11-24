@@ -113,6 +113,7 @@ class DatabaseHelper {
             privacy_last_seen TEXT DEFAULT 'all',
             privacy_sparks TEXT DEFAULT 'all',
             privacy_avatar TEXT DEFAULT 'all',
+            hide_sparks INTEGER DEFAULT 0,
             profile_completed INTEGER DEFAULT 0,
             updated_at TEXT
           );
@@ -341,6 +342,9 @@ class DatabaseHelper {
       if (!userCols.contains('privacy_avatar')) {
         await db.execute("ALTER TABLE users ADD COLUMN privacy_avatar TEXT DEFAULT 'all';");
       }
+      if (!userCols.contains('hide_sparks')) {
+        await db.execute("ALTER TABLE users ADD COLUMN hide_sparks INTEGER DEFAULT 0;");
+      }
       if (!userCols.contains('profile_completed')) {
         await db.execute("ALTER TABLE users ADD COLUMN profile_completed INTEGER DEFAULT 0;");
       }
@@ -441,9 +445,14 @@ class DatabaseHelper {
   Future<void> updateUserProfile(User user) async {
     try {
       final db = await instance.database;
+      final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
+          .map((e) => e['name']?.toString())
+          .toSet();
+      final map = Map<String, dynamic>.from(user.toMap());
+      map.removeWhere((key, _) => !userCols.contains(key));
       await db.update(
         'users',
-        user.toMap(),
+        map,
         where: 'id = ?',
         whereArgs: [user.id],
       );
@@ -1339,9 +1348,14 @@ class DatabaseHelper {
   Future<void> insertUser(User user) async {
     try {
       final db = await instance.database;
+      final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
+          .map((e) => e['name']?.toString())
+          .toSet();
+      final map = Map<String, dynamic>.from(user.toMap());
+      map.removeWhere((key, _) => !userCols.contains(key));
       await db.insert(
         'users',
-        user.toMap(),
+        map,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     } catch (_) {}

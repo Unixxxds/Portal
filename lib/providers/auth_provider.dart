@@ -123,8 +123,7 @@ class AuthProvider with ChangeNotifier {
             _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
             await DatabaseHelper.setActiveUserId(_currentUser!.id);
             await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
-            final db = await DatabaseHelper.instance.database;
-            await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+            await DatabaseHelper.instance.insertUser(_currentUser!);
 
             await MultiAccountService.instance.saveAccount(
               AccountSession(
@@ -182,8 +181,7 @@ class AuthProvider with ChangeNotifier {
           _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
           await DatabaseHelper.setActiveUserId(_currentUser!.id);
           await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
-          final db = await DatabaseHelper.instance.database;
-          await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+          await DatabaseHelper.instance.insertUser(_currentUser!);
 
           await MultiAccountService.instance.saveAccount(
             AccountSession(
@@ -292,8 +290,7 @@ class AuthProvider with ChangeNotifier {
       if (_currentUser != null) {
         await DatabaseHelper.setActiveUserId(_currentUser!.id);
         await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
-        final db = await DatabaseHelper.instance.database;
-        await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        await DatabaseHelper.instance.insertUser(_currentUser!);
 
         final token = await SecureStorageService.instance.getToken();
         if (token != null) {
