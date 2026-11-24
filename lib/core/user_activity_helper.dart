@@ -4,9 +4,11 @@ class UserActivityHelper {
     String? lastSeen,
     bool isBot = false,
     bool isChannel = false,
+    bool isActivityHidden = false,
   }) {
     if (isChannel) return 'канал';
     if (isBot) return 'бот';
+    if (isActivityHidden) return 'был(а) недавно';
     if (isOnline) return 'в сети';
     if (lastSeen == null || lastSeen.trim().isEmpty) {
       return 'был(а) недавно';

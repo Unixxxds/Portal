@@ -121,7 +121,7 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
     String? pickedPath;
     if (Platform.isWindows) {
       try {
-        final script = r"""
+        const script = r"""
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = 'Выберите аватарку канала'
@@ -225,6 +225,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       final channelMap = res['channel'] is Map<String, dynamic> ? res['channel'] as Map<String, dynamic> : null;
       final chatId = channelMap != null ? (channelMap['chat_id'] ?? channelMap['id']) : null;
 
+      if (!mounted) return;
       final chatProvider = context.read<ChatProvider>();
       await chatProvider.syncBootstrap();
 

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../theme.dart';
@@ -18,6 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _digitFocusNodes = List.generate(6, (_) => FocusNode());
   final _cloudPasswordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _bioController = TextEditingController();
+  String? _setupAvatarPath;
 
   bool _obscureCloudPassword = true;
   int _countdown = 0;
@@ -27,6 +33,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _firstNameController.addListener(() {
+      if (mounted) setState(() {});
+    });
     for (int i = 0; i < 6; i++) {
       final index = i;
       _digitControllers[index].addListener(() {
@@ -47,6 +56,9 @@ class _LoginScreenState extends State<LoginScreen> {
       f.dispose();
     }
     _cloudPasswordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _bioController.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -147,6 +159,97 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _pickAvatarPhoto(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source, imageQuality: 92);
+      if (picked != null && picked.path.isNotEmpty) {
+        final file = File(picked.path);
+        if (await file.exists()) {
+          setState(() => _setupAvatarPath = picked.path);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking avatar in setup: $e');
+    }
+  }
+
+  void _showAvatarSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3A3A3C),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: Colors.white),
+                title: const Text('Выбрать из галереи', style: TextStyle(color: Colors.white, fontSize: 16)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAvatarPhoto(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined, color: Colors.white),
+                title: const Text('Сделать снимок', style: TextStyle(color: Colors.white, fontSize: 16)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAvatarPhoto(ImageSource.camera);
+                },
+              ),
+              if (_setupAvatarPath != null)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Color(0xFFFF453A)),
+                  title: const Text('Удалить фото', style: TextStyle(color: Color(0xFFFF453A), fontSize: 16)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() => _setupAvatarPath = null);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleCompleteProfileSetup() async {
+    setState(() => _localError = null);
+    final firstName = _firstNameController.text.trim();
+    if (firstName.isEmpty) {
+      setState(() => _localError = 'Введите ваше имя');
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final success = await auth.completeProfileSetup(
+      firstName: firstName,
+      lastName: _lastNameController.text.trim(),
+      description: _bioController.text.trim(),
+      avatarPath: _setupAvatarPath,
+    );
+    if (!mounted) return;
+
+    if (!success) {
+      setState(() => _localError = auth.errorMessage ?? 'Не удалось сохранить профиль');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -193,7 +296,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 22),
 
-                  if (auth.step == AuthStep.cloudPassword) ...[
+                  if (auth.step == AuthStep.profileSetup) ...[
+                    _buildProfileSetupView(auth, errorMessage),
+                  ] else if (auth.step == AuthStep.cloudPassword) ...[
                     _buildCloudPasswordView(auth, errorMessage),
                   ] else if (auth.step == AuthStep.code) ...[
                     _buildCodeView(auth, errorMessage),
@@ -701,6 +806,311 @@ class _LoginScreenState extends State<LoginScreen> {
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.2,
                     ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileSetupView(AuthProvider auth, String? errorMessage) {
+    final canProceed = _firstNameController.text.trim().isNotEmpty && !auth.isLoading;
+
+    return Column(
+      children: [
+        // Back / Cancel button
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _localError = null;
+                _setupAvatarPath = null;
+                _firstNameController.clear();
+                _lastNameController.clear();
+                _bioController.clear();
+              });
+              auth.cancelProfileSetup();
+            },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.chevron_left_rounded, color: Color(0xFF8E8E93), size: 20),
+                  SizedBox(width: 2),
+                  Text(
+                    'Назад',
+                    style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        const Text(
+          'Настройка профиля',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+            color: Colors.white,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Введите ваше имя и заполните профиль, чтобы друзья могли узнать вас в Portal',
+          style: TextStyle(
+            fontSize: 13,
+            color: Color(0xFF8E8E93),
+            height: 1.45,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 20),
+
+        // Avatar Picker with Camera badge
+        GestureDetector(
+          onTap: _showAvatarSourceSheet,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF1E212B),
+                  border: Border.all(color: const Color(0xFF33384A), width: 1.5),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _setupAvatarPath != null
+                    ? Image.file(
+                        File(_setupAvatarPath!),
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover,
+                      )
+                    : const Center(
+                        child: Icon(
+                          Icons.person_outline_rounded,
+                          color: Color(0xFF8E8E93),
+                          size: 46,
+                        ),
+                      ),
+              ),
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentBlue,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.authCardBg, width: 2.5),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _showAvatarSourceSheet,
+          child: Text(
+            _setupAvatarPath != null ? 'Изменить фото' : 'Выбрать фото',
+            style: const TextStyle(
+              color: AppTheme.accentBlue,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // First Name Input (Required)
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'ИМЯ (ОБЯЗАТЕЛЬНО)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: Color(0xFF71717A),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.authInputBg,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: errorMessage != null && _firstNameController.text.trim().isEmpty
+                  ? const Color(0xFFFF453A)
+                  : AppTheme.authInputBorder,
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            controller: _firstNameController,
+            textCapitalization: TextCapitalization.words,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: const InputDecoration(
+              hintText: 'Ваше имя',
+              hintStyle: TextStyle(color: Color(0xFF636366), fontSize: 15),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              suffixIcon: Icon(Icons.person_outline_rounded, color: Color(0xFF636366), size: 19),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Last Name Input (Optional)
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'ФАМИЛИЯ (НЕ ОБЯЗАТЕЛЬНО)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: Color(0xFF71717A),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.authInputBg,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: AppTheme.authInputBorder,
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            controller: _lastNameController,
+            textCapitalization: TextCapitalization.words,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: const InputDecoration(
+              hintText: 'Фамилия',
+              hintStyle: TextStyle(color: Color(0xFF636366), fontSize: 15),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Bio Input (Optional)
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'О СЕБЕ (НЕ ОБЯЗАТЕЛЬНО)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: Color(0xFF71717A),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.authInputBg,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: AppTheme.authInputBorder,
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            controller: _bioController,
+            maxLines: 3,
+            minLines: 1,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: const InputDecoration(
+              hintText: 'Пара слов о себе',
+              hintStyle: TextStyle(color: Color(0xFF636366), fontSize: 15),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        if (errorMessage != null) ...[
+          Text(
+            errorMessage,
+            style: const TextStyle(
+              color: Color(0xFFFF453A),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Submit Button
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            onPressed: canProceed ? _handleCompleteProfileSetup : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              disabledBackgroundColor: Colors.white.withOpacity(0.35),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
+              ),
+            ),
+            child: auth.isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Продолжить',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_rounded, size: 18),
+                    ],
                   ),
           ),
         ),

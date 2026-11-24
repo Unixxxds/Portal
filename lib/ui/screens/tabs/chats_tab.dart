@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../models/chat.dart';
@@ -203,10 +202,6 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     for (final c in chatProvider.chats) {
       if (c.isChannel) continue;
       if (c.participantId == targetUserId) {
-        existing = c;
-        break;
-      }
-      if (c.isDirect && c.id == targetUserId) {
         existing = c;
         break;
       }

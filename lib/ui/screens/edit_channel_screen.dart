@@ -278,7 +278,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
   @override
   Widget build(BuildContext context) {
-    final avatarSize = 88.0;
+    const avatarSize = 88.0;
 
     return Scaffold(
       backgroundColor: Colors.black,

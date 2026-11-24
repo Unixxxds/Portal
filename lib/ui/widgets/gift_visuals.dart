@@ -780,8 +780,11 @@ class GiftPatternPainter extends CustomPainter {
           final angle = i * (math.pi / 3);
           final px = x + r * math.cos(angle);
           final py = y + r * math.sin(angle);
-          if (i == 0) path.moveTo(px, py);
-          else path.lineTo(px, py);
+          if (i == 0) {
+            path.moveTo(px, py);
+          } else {
+            path.lineTo(px, py);
+          }
         }
         path.close();
         canvas.drawPath(path, stroke);

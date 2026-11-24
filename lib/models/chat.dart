@@ -24,6 +24,11 @@ class Chat {
   final int subscribersCount;
   final bool isSubscribed;
   final int artifacts;
+  final bool isActivityHidden;
+  final String? privacyLastSeen;
+  final String? privacyAvatar;
+  final String? privacySparks;
+  final bool hideSparks;
 
   Chat({
     required this.id,
@@ -49,6 +54,11 @@ class Chat {
     this.subscribersCount = 0,
     this.isSubscribed = false,
     this.artifacts = 0,
+    this.isActivityHidden = false,
+    this.privacyLastSeen,
+    this.privacyAvatar,
+    this.privacySparks,
+    this.hideSparks = false,
   });
 
   String get effectiveVerification {
@@ -177,6 +187,11 @@ class Chat {
     int? subscribersCount,
     bool? isSubscribed,
     int? artifacts,
+    bool? isActivityHidden,
+    String? privacyLastSeen,
+    String? privacyAvatar,
+    String? privacySparks,
+    bool? hideSparks,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -202,6 +217,11 @@ class Chat {
       subscribersCount: subscribersCount ?? this.subscribersCount,
       isSubscribed: isSubscribed ?? this.isSubscribed,
       artifacts: artifacts ?? this.artifacts,
+      isActivityHidden: isActivityHidden ?? this.isActivityHidden,
+      privacyLastSeen: privacyLastSeen ?? this.privacyLastSeen,
+      privacyAvatar: privacyAvatar ?? this.privacyAvatar,
+      privacySparks: privacySparks ?? this.privacySparks,
+      hideSparks: hideSparks ?? this.hideSparks,
     );
   }
 
@@ -313,6 +333,15 @@ class Chat {
       artifacts: json['artifacts'] is int
           ? json['artifacts'] as int
           : int.tryParse(json['artifacts']?.toString() ?? '') ?? 0,
+      isActivityHidden: json['is_activity_hidden'] == true ||
+          json['is_activity_hidden'] == 1 ||
+          json['isActivityHidden'] == true,
+      privacyLastSeen: json['privacy_last_seen']?.toString(),
+      privacyAvatar: json['privacy_avatar']?.toString(),
+      privacySparks: json['privacy_sparks']?.toString(),
+      hideSparks: json['hide_sparks'] == true ||
+          json['hide_sparks'] == 1 ||
+          json['hideSparks'] == true,
     );
   }
 
@@ -373,6 +402,11 @@ class Chat {
       subscribersCount: map['subscribers_count'] as int? ?? 0,
       isSubscribed: (map['is_subscribed'] as int? ?? 0) == 1,
       artifacts: map['artifacts'] as int? ?? 0,
+      isActivityHidden: (map['is_activity_hidden'] as int? ?? 0) == 1,
+      privacyLastSeen: map['privacy_last_seen']?.toString(),
+      privacyAvatar: map['privacy_avatar']?.toString(),
+      privacySparks: map['privacy_sparks']?.toString(),
+      hideSparks: (map['hide_sparks'] as int? ?? 0) == 1,
     );
   }
 }

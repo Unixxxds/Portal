@@ -202,7 +202,7 @@ class ChatProvider with ChangeNotifier {
     final chatIdx = _chats.indexWhere(
       (c) => isChannel
           ? (c.isChannel && c.id == chatId)
-          : (!c.isChannel && (c.id == chatId || (participantId != null && (c.participantId == participantId || c.id == participantId)))),
+          : (!c.isChannel && (c.id == chatId || (participantId != null && c.participantId == participantId))),
     );
     if (chatIdx != -1) {
       _chats[chatIdx] = _chats[chatIdx].copyWith(unreadCount: 0);
@@ -389,7 +389,7 @@ class ChatProvider with ChangeNotifier {
     // 2. Обновляем в локальном списке чатов (только для обычных чатов, не каналов!)
     bool changed = false;
     for (int i = 0; i < _chats.length; i++) {
-      if (!_chats[i].isChannel && (_chats[i].participantId == userId || _chats[i].id == (chatId ?? userId))) {
+      if (!_chats[i].isChannel && (_chats[i].participantId == userId || (chatId != null && _chats[i].id == chatId))) {
         final cleanVerif = (verification != null && verification.isNotEmpty && verification != 'none')
             ? verification
             : _chats[i].verification;
@@ -922,7 +922,7 @@ class ChatProvider with ChangeNotifier {
 
     final isSelfChat = !chat.isChannel && (
       chat.isSaved ||
-      (currentUserId > 0 && (chat.participantId == currentUserId || chat.id == currentUserId))
+      (currentUserId > 0 && chat.participantId != null && chat.participantId == currentUserId && chat.isSaved)
     );
 
     if (isSelfChat) {

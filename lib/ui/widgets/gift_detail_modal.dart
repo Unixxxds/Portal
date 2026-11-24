@@ -140,7 +140,7 @@ class _GiftDetailModalState extends State<GiftDetailModal> with TickerProviderSt
 
     // 1. Pick winner model and winner backdrop
     final wonModel = availableModels[_random.nextInt(availableModels.length)];
-    final allBackdrops = GiftVisuals.allBackdropOptions;
+    const allBackdrops = GiftVisuals.allBackdropOptions;
     final wonBackdrop = allBackdrops[_random.nextInt(allBackdrops.length)];
 
     _wonModel = wonModel;

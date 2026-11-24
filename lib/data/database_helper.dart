@@ -110,6 +110,10 @@ class DatabaseHelper {
             secondary_usernames TEXT DEFAULT '',
             pinned_channel_id INTEGER,
             profile_color TEXT DEFAULT '',
+            privacy_last_seen TEXT DEFAULT 'all',
+            privacy_sparks TEXT DEFAULT 'all',
+            privacy_avatar TEXT DEFAULT 'all',
+            profile_completed INTEGER DEFAULT 0,
             updated_at TEXT
           );
         ''');
@@ -327,6 +331,18 @@ class DatabaseHelper {
       }
       if (!userCols.contains('updated_at')) {
         await db.execute("ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT '';");
+      }
+      if (!userCols.contains('privacy_last_seen')) {
+        await db.execute("ALTER TABLE users ADD COLUMN privacy_last_seen TEXT DEFAULT 'all';");
+      }
+      if (!userCols.contains('privacy_sparks')) {
+        await db.execute("ALTER TABLE users ADD COLUMN privacy_sparks TEXT DEFAULT 'all';");
+      }
+      if (!userCols.contains('privacy_avatar')) {
+        await db.execute("ALTER TABLE users ADD COLUMN privacy_avatar TEXT DEFAULT 'all';");
+      }
+      if (!userCols.contains('profile_completed')) {
+        await db.execute("ALTER TABLE users ADD COLUMN profile_completed INTEGER DEFAULT 0;");
       }
 
       final msgCols = (await db.rawQuery("PRAGMA table_info(messages)"))
@@ -670,7 +686,7 @@ class DatabaseHelper {
 
         final isSavedChat = !isChan && (
           c['type'] == 'saved' ||
-          (activeUserId > 0 && (pId == activeUserId || cId == activeUserId)) ||
+          (activeUserId > 0 && pId != null && pId == activeUserId && (c['type'] == 'saved' || rawTitle.toLowerCase().contains('избранное'))) ||
           rawTitle.toLowerCase().contains('избранное') ||
           rawTitle.toLowerCase().contains('сохранен') ||
           rawTitle.toLowerCase() == 'saved messages'
@@ -811,7 +827,7 @@ class DatabaseHelper {
     for (final c in rawChats) {
       final isSelfChat = !c.isChannel && (
         c.isSaved ||
-        (currentUserId > 0 && (c.participantId == currentUserId || c.id == currentUserId))
+        (currentUserId > 0 && c.participantId != null && c.participantId == currentUserId && c.isSaved)
       );
 
       if (isSelfChat) {
@@ -842,10 +858,14 @@ class DatabaseHelper {
           columns: ['created_at', 'text'],
           where: c.isChannel
               ? 'chat_id = ?'
-              : '(chat_id = ? OR chat_id = ?)',
+              : ((c.participantId != null && c.participantId! > 0)
+                  ? '(chat_id = ? OR chat_id = ?)'
+                  : 'chat_id = ?'),
           whereArgs: c.isChannel
               ? [c.id]
-              : [c.id, c.participantId ?? c.id],
+              : ((c.participantId != null && c.participantId! > 0)
+                  ? [c.id, c.participantId!]
+                  : [c.id]),
           orderBy: 'id DESC',
           limit: 1,
         );

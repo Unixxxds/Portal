@@ -1,12 +1,8 @@
 import 'dart:io';
-import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
@@ -37,7 +33,7 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
   final GlobalKey _qrPosterKey = GlobalKey();
   bool _isSaving = false;
 
-  Future<void> _saveQrCardToGallery(BuildContext context, String cleanUname) async {
+  Future<void> _saveQrCardToGallery(String cleanUname) async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
 
@@ -356,7 +352,7 @@ class _ProfileQrScreenState extends State<ProfileQrScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 24),
                 child: GestureDetector(
-                  onTap: _isSaving ? null : () => _saveQrCardToGallery(context, cleanUname),
+                  onTap: _isSaving ? null : () => _saveQrCardToGallery(cleanUname),
                   child: Container(
                     width: 52,
                     height: 52,
@@ -510,12 +506,14 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       // Check if it's the current user themselves
       final authUser = context.read<AuthProvider>().currentUser;
       if (authUser != null) {
-        final myUsername = (authUser.username ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
+        final myUsername = authUser.username.replaceFirst(RegExp(r'^@+'), '').toLowerCase();
         final isMyId = (numericId != null && authUser.id == numericId);
         final isMyUsername = (myUsername.isNotEmpty && myUsername == username.toLowerCase());
         if (isMyId || isMyUsername) {
           if (mounted) {
-            Navigator.pop(context); // Close scanner and return to own profile
+            final nav = Navigator.of(context);
+            nav.pop(); // Close scanner
+            nav.pop(); // Close QR screen and return to own profile
             return;
           }
         }
@@ -532,13 +530,15 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
       }).firstOrNull;
 
       if (localMatch != null && mounted) {
+        final nav = Navigator.of(context);
+        nav.pop(); // Close QrScannerScreen
         if (localMatch.isChannel) {
-          Navigator.of(context).pushReplacement(
+          nav.pushReplacement(
             TelegramChatRoute(builder: (_) => ChatScreen(chat: localMatch)),
           );
         } else {
-          Navigator.of(context).pushReplacement(
-            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: localMatch)),
+          nav.pushReplacement(
+            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: localMatch, fromChat: false)),
           );
         }
         return;
@@ -579,7 +579,9 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
             isSubscribed: isSubscribed,
           );
           chatProv.addOrUpdateChat(channelChat);
-          Navigator.of(context).pushReplacement(
+          final nav = Navigator.of(context);
+          nav.pop(); // Close QrScannerScreen
+          nav.pushReplacement(
             TelegramChatRoute(builder: (_) => ChatScreen(chat: channelChat)),
           );
         } else {
@@ -606,8 +608,10 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
             lastSeen: lastSeen,
           );
           chatProv.addOrUpdateChat(directChat);
-          Navigator.of(context).pushReplacement(
-            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: directChat)),
+          final nav = Navigator.of(context);
+          nav.pop(); // Close QrScannerScreen
+          nav.pushReplacement(
+            TelegramProfileRoute(builder: (_) => UserProfileScreen(chat: directChat, fromChat: false)),
           );
         }
         return;

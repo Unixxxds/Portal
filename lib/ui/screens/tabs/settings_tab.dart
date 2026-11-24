@@ -13,6 +13,7 @@ import '../../widgets/badges.dart';
 import '../data_and_storage_screen.dart';
 import '../language_screen.dart';
 import '../notifications_and_sounds_screen.dart';
+import '../privacy_settings_screen.dart';
 
 class SettingsTab extends StatelessWidget {
   final VoidCallback onOpenProfile;
@@ -202,7 +203,14 @@ class SettingsTab extends StatelessWidget {
                 icon: Icons.privacy_tip_rounded,
                 iconBg: const Color(0xFF636366), // iOS System Dark Grey
                 title: 'Конфиденциальность',
-                onTap: () {},
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PrivacySettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ]),
           ],

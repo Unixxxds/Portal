@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -13,7 +14,7 @@ import '../services/push_notification_service.dart';
 import 'chat_provider.dart';
 
 enum AuthStatus { initial, checking, authenticated, unauthenticated }
-enum AuthStep { email, code, cloudPassword }
+enum AuthStep { email, code, cloudPassword, profileSetup }
 
 class AuthProvider with ChangeNotifier {
   AuthStatus _status = AuthStatus.initial;
@@ -46,6 +47,15 @@ class AuthProvider with ChangeNotifier {
         if (userId != null) {
           await DatabaseHelper.setActiveUserId(userId);
           _currentUser = await DatabaseHelper.instance.getUser(userId);
+        }
+        if (_currentUser != null &&
+            !_currentUser!.profileCompleted &&
+            _currentUser!.firstName.trim().isEmpty) {
+          _status = AuthStatus.unauthenticated;
+          _step = AuthStep.profileSetup;
+          _isLoading = false;
+          notifyListeners();
+          return;
         }
         _status = AuthStatus.authenticated;
         await MultiAccountService.instance.init(currentUser: _currentUser, currentToken: token);
@@ -126,6 +136,19 @@ class AuthProvider with ChangeNotifier {
             );
           }
 
+          // Проверка на нового пользователя (требуется настройка профиля)
+          final isNewUser = _currentUser == null ||
+              !_currentUser!.profileCompleted ||
+              _currentUser!.firstName.trim().isEmpty;
+
+          if (isNewUser) {
+            _step = AuthStep.profileSetup;
+            _status = AuthStatus.unauthenticated;
+            _isLoading = false;
+            notifyListeners();
+            return true;
+          }
+
           _status = AuthStatus.authenticated;
           _isLoading = false;
           notifyListeners();
@@ -174,6 +197,20 @@ class AuthProvider with ChangeNotifier {
 
         _cloudTempToken = null;
         _cloudPasswordHint = null;
+
+        // Проверка на нового пользователя
+        final isNewUser = _currentUser == null ||
+            !_currentUser!.profileCompleted ||
+            _currentUser!.firstName.trim().isEmpty;
+
+        if (isNewUser) {
+          _step = AuthStep.profileSetup;
+          _status = AuthStatus.unauthenticated;
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        }
+
         _status = AuthStatus.authenticated;
         _isLoading = false;
         notifyListeners();
@@ -200,6 +237,98 @@ class AuthProvider with ChangeNotifier {
   void returnToCodeStep() {
     _step = AuthStep.code;
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  Future<bool> completeProfileSetup({
+    required String firstName,
+    String? lastName,
+    String? description,
+    String? avatarPath,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      String? avatarUrl = _currentUser?.avatar;
+      if (avatarPath != null && avatarPath.isNotEmpty) {
+        try {
+          final uploaded = await ApiService.instance.uploadAvatar(File(avatarPath));
+          if (uploaded.isNotEmpty) {
+            avatarUrl = uploaded;
+          }
+        } catch (e) {
+          debugPrint('Upload avatar error in setup: $e');
+        }
+      }
+
+      final res = await ApiService.instance.updateProfile(
+        firstName: firstName.trim(),
+        lastName: (lastName ?? '').trim(),
+        description: (description ?? '').trim(),
+        avatar: avatarUrl,
+      );
+
+      if (res['user'] != null && res['user'] is Map<String, dynamic>) {
+        _currentUser = User.fromJson(res['user'] as Map<String, dynamic>);
+      } else {
+        final currentId = _currentUser?.id ?? (await SecureStorageService.instance.getCurrentUserId()) ?? 0;
+        _currentUser = (_currentUser ?? User(
+          id: currentId,
+          firstName: firstName.trim(),
+          lastName: (lastName ?? '').trim(),
+          username: '',
+          avatar: avatarUrl ?? '',
+        )).copyWith(
+          firstName: firstName.trim(),
+          lastName: (lastName ?? '').trim(),
+          description: (description ?? '').trim(),
+          avatar: avatarUrl ?? '',
+          profileCompleted: true,
+        );
+      }
+
+      if (_currentUser != null) {
+        await DatabaseHelper.setActiveUserId(_currentUser!.id);
+        await SecureStorageService.instance.saveCurrentUserId(_currentUser!.id);
+        final db = await DatabaseHelper.instance.database;
+        await db.insert('users', _currentUser!.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+
+        final token = await SecureStorageService.instance.getToken();
+        if (token != null) {
+          await MultiAccountService.instance.saveAccount(
+            AccountSession(
+              userId: _currentUser!.id,
+              token: token,
+              user: _currentUser!,
+              lastActive: DateTime.now(),
+            ),
+          );
+        }
+      }
+
+      _status = AuthStatus.authenticated;
+      _step = AuthStep.email;
+      _isLoading = false;
+      notifyListeners();
+
+      WebSocketService.instance.connect();
+      _listenWs();
+      PushNotificationService.instance.requestPermissionAndRegister();
+      return true;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void cancelProfileSetup() {
+    _step = AuthStep.email;
+    _errorMessage = null;
+    SecureStorageService.instance.clearAll();
     notifyListeners();
   }
 
@@ -303,6 +432,42 @@ class AuthProvider with ChangeNotifier {
       );
     } catch (e) {
       debugPrint('updateProfileColor API error: $e');
+    }
+  }
+
+  Future<void> updatePrivacy({
+    String? privacyLastSeen,
+    String? privacySparks,
+    String? privacyAvatar,
+  }) async {
+    if (_currentUser == null) return;
+    final updated = _currentUser!.copyWith(
+      privacyLastSeen: privacyLastSeen ?? _currentUser!.privacyLastSeen,
+      privacySparks: privacySparks ?? _currentUser!.privacySparks,
+      privacyAvatar: privacyAvatar ?? _currentUser!.privacyAvatar,
+    );
+    _currentUser = updated;
+    notifyListeners();
+
+    await DatabaseHelper.instance.updateUserProfile(updated);
+    await MultiAccountService.instance.updateUser(updated);
+
+    try {
+      final res = await ApiService.instance.updatePrivacySettings(
+        privacyLastSeen: privacyLastSeen,
+        privacySparks: privacySparks,
+        privacyAvatar: privacyAvatar,
+      );
+      if (res['user'] != null && res['user'] is Map<String, dynamic>) {
+        final serverUser = User.fromJson(res['user'] as Map<String, dynamic>);
+        _currentUser = serverUser;
+        notifyListeners();
+        await DatabaseHelper.instance.updateUserProfile(serverUser);
+        await MultiAccountService.instance.updateUser(serverUser);
+      }
+    } catch (e) {
+      debugPrint('updatePrivacy API error: $e');
+      rethrow;
     }
   }
 

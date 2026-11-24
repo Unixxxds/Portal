@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
@@ -38,6 +40,145 @@ class _ProfileTabState extends State<ProfileTab> {
   List<UserGift> _userGifts = [];
   bool _isLoadingGifts = false;
   int? _loadedUserId;
+
+  String _formatSparks(int sparks) {
+    if (sparks <= 0) return '0';
+    return sparks.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]} ',
+    );
+  }
+
+  void _copyToClipboard(String text, String label) {
+    if (text.isEmpty || text == 'Информация о себе не указана') return;
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label скопирован в буфер обмена'),
+        duration: const Duration(seconds: 1),
+        backgroundColor: AppTheme.bgSurface3,
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({
+    required String label,
+    required String value,
+    bool isInteractive = false,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap ?? () => _copyToClipboard(value, label),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF8E8E93),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value.isNotEmpty
+                    ? value
+                    : (label.toLowerCase() == 'о себе'
+                        ? 'Информация о себе не указана'
+                        : (label.toLowerCase() == 'номер телефона' ? '+7 999 000-00-00' : '')),
+                style: TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: (value == 'Информация о себе не указана' || value.isEmpty)
+                      ? const Color(0xFF8E8E93)
+                      : Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsernameRow({
+    required String username,
+    required List<String> secondaryUsernames,
+    String? verification,
+    bool isVerified = false,
+  }) {
+    return InkWell(
+      onTap: () => _copyToClipboard('@$username', 'Username'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'имя пользователя',
+                style: TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF8E8E93),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '@$username',
+                style: const TextStyle(
+                  fontFamily: AppTheme.fontText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.white,
+                ),
+              ),
+              if (secondaryUsernames.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'а также ',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontText,
+                        fontSize: 13,
+                        color: Color(0xFF8E8E93),
+                        fontWeight: FontWeight.w300,
+                      ),
+                    ),
+                    for (int i = 0; i < secondaryUsernames.length; i++) ...[
+                      GestureDetector(
+                        onTap: () => _copyToClipboard('@${secondaryUsernames[i]}', 'Username'),
+                        child: Text(
+                          '@${secondaryUsernames[i]}${i < secondaryUsernames.length - 1 ? ', ' : ''}',
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 13,
+                            color: Color(0xFF8E8E93),
+                            fontWeight: FontWeight.w300,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -97,6 +238,7 @@ class _ProfileTabState extends State<ProfileTab> {
         setState(() => _isLoadingGifts = true);
       }
       final apiGifts = await ApiService.instance.getUserGifts(userId);
+      if (!mounted) return;
       final currentUser = context.read<AuthProvider>().currentUser;
       final freshList = apiGifts.map((g) {
         final map = Map<String, dynamic>.from(g);
@@ -149,6 +291,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 avatar: url,
                 bannerUrl: u.bannerUrl,
               );
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Фото профиля обновлено', style: TextStyle(color: Colors.white)),
@@ -204,6 +347,7 @@ class _ProfileTabState extends State<ProfileTab> {
               avatar: u.avatar,
               bannerUrl: url,
             );
+            if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Баннер профиля обновлен', style: TextStyle(color: Colors.white)),
@@ -643,6 +787,13 @@ class _ProfileTabState extends State<ProfileTab> {
     final formattedBanner = AppConstants.formatMediaUrl(user.bannerUrl);
     final profileTheme = ProfileColorTheme.fromId(user.profileColor);
 
+    final description = user.description?.trim() ?? '';
+    final username = user.username.replaceFirst(RegExp(r'^@+'), '');
+    final secondaryUsernames = user.secondaryUsernames;
+    final phone = (user.phone != null && user.phone!.trim().isNotEmpty)
+        ? user.phone!.trim()
+        : (user.email != null && user.email!.trim().isNotEmpty ? user.email!.trim() : '+7 999 000-00-00');
+
     return Scaffold(
       backgroundColor: profileTheme.backgroundGradient.last,
       body: Stack(
@@ -685,8 +836,9 @@ class _ProfileTabState extends State<ProfileTab> {
           color: Colors.white,
           backgroundColor: const Color(0xFF191919),
           onRefresh: () async {
-            await context.read<AuthProvider>().refreshCurrentUser();
-            final cur = context.read<AuthProvider>().currentUser;
+            final authProv = context.read<AuthProvider>();
+            await authProv.refreshCurrentUser();
+            final cur = authProv.currentUser;
             if (cur != null) {
               await _loadUserGifts(cur.id);
             }
@@ -1057,24 +1209,51 @@ class _ProfileTabState extends State<ProfileTab> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (user.description != null && user.description!.trim().isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Text(
-                        user.description!.trim(),
-                        textAlign: TextAlign.center,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: AppTheme.fontText,
-                          fontSize: 13.5,
-                          color: Color(0xFF929292),
-                          height: 1.35,
+                  const SizedBox(height: 6),
+
+                  // Frosted glass Sparks balance capsule (плашка с балансом Sparks в разделе Я)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0x18FFFFFF),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0x1FFFFFFF),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SvgPicture.asset(
+                              'lib/assets/premium.svg',
+                              width: 14,
+                              height: 14,
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white,
+                                BlendMode.srcIn,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_formatSparks(user.sparks)} Sparks',
+                              style: const TextStyle(
+                                fontFamily: AppTheme.fontDisplay,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -1223,6 +1402,45 @@ class _ProfileTabState extends State<ProfileTab> {
                 );
               },
             ),
+
+            // =================================================================
+            // GROUPED CARD: О СЕБЕ / ИМЯ ПОЛЬЗОВАТЕЛЯ / ТЕЛЕФОН
+            // =================================================================
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: profileTheme.cardColor,
+                borderRadius: BorderRadius.circular(26),
+              ),
+              child: Column(
+                children: [
+                  // о себе
+                  _buildInfoRow(
+                    label: 'о себе',
+                    value: description,
+                  ),
+                  const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
+
+                  // имя пользователя & доп юзернеймы
+                  _buildUsernameRow(
+                    username: username,
+                    secondaryUsernames: secondaryUsernames,
+                    verification: user.verification,
+                    isVerified: user.isVerified,
+                  ),
+                  const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
+
+                  // номер телефона
+                  _buildInfoRow(
+                    label: 'номер телефона',
+                    value: phone,
+                    isInteractive: true,
+                    onTap: () => _copyToClipboard(phone, phone.contains('@') ? 'E-mail' : 'Номер телефона'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
             // =================================================================
             // SECTION: ПОДАРКИ (3-Column Square Grid)

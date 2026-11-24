@@ -506,9 +506,9 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
+                                  const Row(
                                     children: [
-                                      const Text(
+                                      Text(
                                         'ссылка',
                                         style: TextStyle(
                                           color: Color(0xFF8E8E93),
@@ -516,8 +516,8 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                                           fontWeight: FontWeight.w400,
                                         ),
                                       ),
-                                      const Spacer(),
-                                      const Icon(
+                                      Spacer(),
+                                      Icon(
                                         Icons.qr_code_2_rounded,
                                         color: Color(0xFF2990FF),
                                         size: 20,

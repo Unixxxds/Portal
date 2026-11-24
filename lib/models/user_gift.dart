@@ -156,14 +156,18 @@ class UserGift {
       }
     }
 
-    if (lower.contains('bmw') || lower.contains('m4'))
+    if (lower.contains('bmw') || lower.contains('m4')) {
       return 'lib/assets/gifts/cars/bmw-model-m4.png';
-    if (lower.contains('priora') || lower.contains('lada'))
+    }
+    if (lower.contains('priora') || lower.contains('lada')) {
       return 'lib/assets/gifts/cars/lada-model-priora.png';
-    if (lower.contains('gle') || lower.contains('mercedes'))
+    }
+    if (lower.contains('gle') || lower.contains('mercedes')) {
       return 'lib/assets/gifts/cars/mercedes-model-gle.png';
-    if (lower.contains('tesla'))
+    }
+    if (lower.contains('tesla')) {
       return 'lib/assets/gifts/cars/tesla-model-roadster.png';
+    }
     if (lower.contains('condom') ||
         lower.contains('balloon') ||
         giftName.toLowerCase().contains('balloon')) {

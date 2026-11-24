@@ -875,10 +875,10 @@ class BubbleForegroundPainter extends CustomPainter {
       height: bubble.r * 0.30,
     );
     final glarePaint = Paint()
-      ..shader = LinearGradient(
+      ..shader = const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: const [
+        colors: [
           Color(0x9EFFFFFF),
           Color(0x00FFFFFF),
         ],

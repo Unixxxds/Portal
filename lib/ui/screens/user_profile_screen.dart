@@ -28,8 +28,13 @@ import 'edit_profile_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
   final Chat chat;
+  final bool fromChat;
 
-  const UserProfileScreen({super.key, required this.chat});
+  const UserProfileScreen({
+    super.key,
+    required this.chat,
+    this.fromChat = false,
+  });
 
   @override
   State<UserProfileScreen> createState() => _UserProfileScreenState();
@@ -67,8 +72,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     _entranceController.forward();
 
     final currentAuth = context.read<AuthProvider>().currentUser;
-    final targetUserId = widget.chat.participantId ?? widget.chat.id;
-    final isSelf = currentAuth != null && currentAuth.id == targetUserId;
+    final targetUserId = widget.chat.participantId;
+    final isSelf = currentAuth != null && targetUserId != null && currentAuth.id == targetUserId;
     final initChannelId = isSelf ? currentAuth.pinnedChannelId : null;
     if (initChannelId != null && initChannelId > 0) {
       _resolvePinnedChannel(initChannelId);
@@ -92,7 +97,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
             ? _userProfile!.id
             : (resolvedChatParticipant != null && resolvedChatParticipant > 0
                 ? resolvedChatParticipant
-                : widget.chat.id));
+                : null));
+
+    if (targetUserId == null || targetUserId <= 0) return;
 
     // 1. Показываем локальный кэш (если есть и список еще пустой)
     try {
@@ -147,41 +154,49 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
 
   Future<void> _loadProfile() async {
     // 0. Мгновенная загрузка профиля из локальной SQLite базы (0 мс)
-    final initialTargetId = widget.chat.participantId ?? widget.chat.id;
-    try {
-      final cachedUser = await DatabaseHelper.instance.getUser(initialTargetId);
-      if (cachedUser != null && mounted && _userProfile == null) {
-        setState(() {
-          _userProfile = cachedUser;
-        });
-      }
-    } catch (_) {}
+    final participantId = widget.chat.participantId;
+    if (participantId != null && participantId > 0) {
+      try {
+        final cachedUser = await DatabaseHelper.instance.getUser(participantId);
+        if (cachedUser != null && mounted && _userProfile == null) {
+          setState(() {
+            _userProfile = cachedUser;
+          });
+        }
+      } catch (_) {}
+    }
 
     Map<String, dynamic>? data;
 
     // 1. Попытка загрузить по participantId
-    if (widget.chat.participantId != null && widget.chat.participantId! > 0) {
-      data = await ApiService.instance.getUserProfile(widget.chat.participantId!);
+    if (participantId != null && participantId > 0) {
+      data = await ApiService.instance.getUserProfile(participantId);
     }
 
-    // 2. Если participantId не указан или вернул null, пробуем по chat.id
-    data ??= await ApiService.instance.getUserProfile(widget.chat.id);
-
-    // 3. Если всё ещё null, ищем пользователя по юзернейму или заголовку
+    // 2. Если всё ещё null или participantId не указан, ищем пользователя по юзернейму или заголовку
     if (data == null) {
       final rawQuery = widget.chat.username?.isNotEmpty == true
           ? widget.chat.username!
           : widget.chat.title;
       final cleanQuery = rawQuery.replaceFirst(RegExp(r'^@+'), '').trim();
-      final searchResults = await ApiService.instance.searchUsers(cleanQuery);
-      if (searchResults.isNotEmpty) {
-        final found = searchResults.first;
-        final foundId = found['id'] is int ? found['id'] as int : int.tryParse(found['id'].toString());
-        if (foundId != null && foundId > 0) {
-          final full = await ApiService.instance.getUserProfile(foundId);
-          data = full ?? found;
-        } else {
-          data = found;
+      if (cleanQuery.isNotEmpty &&
+          cleanQuery.toLowerCase() != 'избранное' &&
+          cleanQuery.toLowerCase() != 'saved messages' &&
+          cleanQuery.toLowerCase() != 'сохраненные сообщения') {
+        final searchResults = await ApiService.instance.searchUsers(cleanQuery);
+        if (searchResults.isNotEmpty) {
+          final exactMatch = searchResults.firstWhere(
+            (u) => (u['username']?.toString().toLowerCase() == cleanQuery.toLowerCase()) ||
+                   ('${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim().toLowerCase() == cleanQuery.toLowerCase()),
+            orElse: () => searchResults.first,
+          );
+          final foundId = exactMatch['id'] is int ? exactMatch['id'] as int : int.tryParse(exactMatch['id'].toString());
+          if (foundId != null && foundId > 0) {
+            final full = await ApiService.instance.getUserProfile(foundId);
+            data = full ?? exactMatch;
+          } else {
+            data = exactMatch;
+          }
         }
       }
     }
@@ -194,16 +209,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
         DatabaseHelper.instance.insertUser(freshUser);
         final isOnline = _userProfile!.isOnline;
         final lastSeen = _userProfile!.lastSeen;
-        final pId = _userProfile!.id > 0 ? _userProfile!.id : (widget.chat.participantId ?? widget.chat.id);
+        final pId = _userProfile!.id > 0 ? _userProfile!.id : widget.chat.participantId;
         resolvedUserId = pId;
-        context.read<ChatProvider>().updatePresence(
-          userId: pId,
-          chatId: widget.chat.id,
-          isOnline: isOnline,
-          lastSeen: lastSeen,
-          verification: _userProfile!.effectiveVerification,
-          isPremium: _userProfile!.isPremium,
-        );
+        if (pId != null && pId > 0) {
+          context.read<ChatProvider>().updatePresence(
+            userId: pId,
+            chatId: widget.chat.id,
+            isOnline: isOnline,
+            lastSeen: lastSeen,
+            verification: _userProfile!.effectiveVerification,
+            isPremium: _userProfile!.isPremium,
+          );
+
+          if (widget.chat.participantId == null || widget.chat.participantId! <= 0) {
+            final updatedChat = widget.chat.copyWith(participantId: pId);
+            context.read<ChatProvider>().addOrUpdateChat(updatedChat);
+          }
+        }
         setState(() {});
 
         final chId = freshUser.pinnedChannelId;
@@ -401,13 +423,79 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     );
   }
 
+  Future<void> _handleMessageButton() async {
+    if (widget.fromChat) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final chatProv = context.read<ChatProvider>();
+    final targetUserId = widget.chat.participantId ?? _userProfile?.id;
+    if (targetUserId == null || targetUserId <= 0) {
+      Navigator.pop(context);
+      return;
+    }
+
+    // 1. Check local loaded chats
+    final existing = chatProv.chats.where((c) =>
+      !c.isChannel && c.participantId == targetUserId
+    ).firstOrNull;
+
+    if (existing != null) {
+      chatProv.preloadChat(existing.id, participantId: existing.participantId);
+      Navigator.push(
+        context,
+        TelegramChatRoute(builder: (context) => ChatScreen(chat: existing)),
+      );
+      return;
+    }
+
+    // 2. Fetch or create direct chat via API
+    try {
+      final res = await ApiService.instance.createDirectChat(targetUserId);
+      Chat directChat;
+      if (res['chat'] is Map<String, dynamic>) {
+        directChat = Chat.fromJson(res['chat'] as Map<String, dynamic>);
+      } else {
+        final newId = res['chatId'] is int
+            ? res['chatId'] as int
+            : int.tryParse(res['chatId']?.toString() ?? '') ?? targetUserId;
+        directChat = Chat(
+          id: newId,
+          title: widget.chat.title,
+          type: 'direct',
+          avatar: widget.chat.avatar,
+          participantId: targetUserId,
+          username: widget.chat.username,
+          isOnline: widget.chat.isOnline,
+          lastSeen: widget.chat.lastSeen,
+        );
+      }
+      await chatProv.addOrUpdateChat(directChat);
+      if (mounted) {
+        chatProv.preloadChat(directChat.id, participantId: directChat.participantId);
+        Navigator.push(
+          context,
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: directChat)),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        Navigator.push(
+          context,
+          TelegramChatRoute(builder: (context) => ChatScreen(chat: widget.chat)),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chat = widget.chat;
     final authUser = context.watch<AuthProvider>().currentUser;
     final currentUserId = authUser?.id;
     final isCurrentUser = currentUserId != null &&
-        (chat.id == currentUserId || chat.participantId == currentUserId || chat.isSaved);
+        ((chat.participantId != null && chat.participantId == currentUserId && chat.isSaved) || chat.isSaved);
     final user = isCurrentUser ? (authUser ?? _userProfile) : _userProfile;
 
     // Resolve channel pinned to this profile
@@ -472,8 +560,27 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       secondaryUsernames = ['dev', 'admin', 'ceo'];
     }
 
-    final avatarUrl = user?.avatar.isNotEmpty == true ? user!.avatar : chat.avatar;
-    final isOnline = user?.isOnline ?? chat.isOnline;
+    final isMyProfile = isCurrentUser ||
+        (authUser != null &&
+            ((chat.participantId != null && chat.participantId == authUser.id && chat.isSaved) ||
+                (user != null && user.id == authUser.id)));
+    final canSeeAvatar = isMyProfile ||
+        ((user?.privacyAvatar ?? chat.privacyAvatar) != 'nobody');
+    final avatarUrl = canSeeAvatar
+        ? (user?.avatar.isNotEmpty == true ? user!.avatar : chat.avatar)
+        : '';
+
+    final isActivityHidden = (user?.privacyLastSeen == 'nobody') ||
+        (chat.privacyLastSeen == 'nobody') ||
+        chat.isActivityHidden;
+    final isOnline = isMyProfile
+        ? (user?.isOnline ?? chat.isOnline)
+        : (!isActivityHidden && (user?.isOnline ?? chat.isOnline));
+
+    final canSeeSparks = isMyProfile ||
+        ((user?.privacySparks ?? chat.privacySparks) != 'nobody' &&
+            user?.hideSparks != true &&
+            chat.hideSparks != true);
 
     // Resolve banner (from current user, API user profile, or chat model)
     String bannerRaw = '';
@@ -728,8 +835,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           Text(
                             UserActivityHelper.formatActivity(
                               isOnline: isOnline,
-                              lastSeen: user?.lastSeen ?? chat.lastSeen,
+                              lastSeen: isActivityHidden ? null : (user?.lastSeen ?? chat.lastSeen),
                               isChannel: chat.isChannel,
+                              isActivityHidden: isActivityHidden,
                             ),
                             style: TextStyle(
                               fontFamily: AppTheme.fontText,
@@ -742,51 +850,53 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      if (canSeeSparks) ...[
+                        const SizedBox(height: 6),
 
-                      // Frosted glass Sparks balance capsule (ультра-прозрачная и стеклянная)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
-                            decoration: BoxDecoration(
-                              color: const Color(0x18FFFFFF), // Ультра-прозрачный стеклянный фон
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: const Color(0x1FFFFFFF), // Тонкая полупрозрачная обводка
-                                width: 0.8,
+                        // Frosted glass Sparks balance capsule (ультра-прозрачная и стеклянная)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0x18FFFFFF), // Ультра-прозрачный стеклянный фон
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0x1FFFFFFF), // Тонкая полупрозрачная обводка
+                                  width: 0.8,
+                                ),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SvgPicture.asset(
-                                  'lib/assets/premium.svg',
-                                  width: 14,
-                                  height: 14,
-                                  colorFilter: const ColorFilter.mode(
-                                    Colors.white,
-                                    BlendMode.srcIn,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SvgPicture.asset(
+                                    'lib/assets/premium.svg',
+                                    width: 14,
+                                    height: 14,
+                                    colorFilter: const ColorFilter.mode(
+                                      Colors.white,
+                                      BlendMode.srcIn,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '${_formatSparks(user?.sparks ?? 0)} Sparks',
-                                  style: const TextStyle(
-                                    fontFamily: AppTheme.fontDisplay,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                    letterSpacing: -0.2,
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${_formatSparks(isMyProfile ? (authUser?.sparks ?? user?.sparks ?? 0) : (user?.sparks ?? 0))} Sparks',
+                                    style: const TextStyle(
+                                      fontFamily: AppTheme.fontDisplay,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                      letterSpacing: -0.2,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -826,7 +936,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                               svgAsset: 'lib/assets/chat.svg',
                               label: 'написать',
                               backgroundColor: profileTheme.buttonColor,
-                              onTap: () => Navigator.pop(context),
+                              onTap: _handleMessageButton,
                             ),
                             const SizedBox(width: 20),
                             _buildRoundActionButton(
@@ -1216,7 +1326,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                           SendGiftModal.show(
                             context,
                             chat: widget.chat,
-                            recipientId: widget.chat.participantId ?? widget.chat.id,
+                            recipientId: widget.chat.participantId ?? _userProfile?.id ?? 0,
                             recipientUsername: widget.chat.title,
                             onGiftSent: (newGift) {
                               if (mounted) {
@@ -1746,7 +1856,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 SendGiftModal.show(
                   context,
                   chat: widget.chat,
-                  recipientId: widget.chat.participantId ?? widget.chat.id,
+                  recipientId: widget.chat.participantId ?? _userProfile?.id ?? 0,
                   recipientUsername: widget.chat.title,
                   onGiftSent: (newGift) {
                     if (mounted) {

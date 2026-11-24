@@ -1182,18 +1182,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // FLOATING CAPSULE HEADER (NO BLACK UNDERLAY)
   // ===========================================================================
   PreferredSizeWidget _buildLiquidGlassHeader(bool isTyping, Chat chat, bool isOnline, bool isChannelOwner) {
+    final isActivityHidden = chat.privacyLastSeen == 'nobody' || chat.isActivityHidden;
+    final effectiveOnline = !isActivityHidden && isOnline;
     final statusText = isTyping
         ? 'печатает...'
         : (chat.isChannel
             ? UserActivityHelper.formatSubscribers(_subscribersCount)
             : UserActivityHelper.formatActivity(
-                isOnline: isOnline,
-                lastSeen: chat.lastSeen,
+                isOnline: effectiveOnline,
+                lastSeen: isActivityHidden ? null : chat.lastSeen,
                 isChannel: chat.isChannel,
+                isActivityHidden: isActivityHidden,
               ));
     final statusColor = isTyping
         ? Colors.white
-        : (isOnline ? AppTheme.statusOnline : const Color(0xFF929292));
+        : (effectiveOnline ? AppTheme.statusOnline : const Color(0xFF929292));
 
     final headerTitle = (chat.isChannel && _liveTitle != null && _liveTitle!.isNotEmpty)
         ? _liveTitle!
@@ -1276,7 +1279,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           Navigator.push(
                             context,
                             TelegramProfileRoute(
-                              builder: (context) => UserProfileScreen(chat: chat),
+                              builder: (context) => UserProfileScreen(chat: chat, fromChat: true),
                             ),
                           );
                         }
@@ -1465,7 +1468,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               Navigator.push(
                                 context,
                                 TelegramProfileRoute(
-                                  builder: (context) => UserProfileScreen(chat: chat),
+                                  builder: (context) => UserProfileScreen(chat: chat, fromChat: true),
                                 ),
                               );
                             },
@@ -2564,7 +2567,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _openForwardedSenderProfile(int senderId, String senderName, String senderAvatar) async {
     if (senderId <= 0 && senderName.isEmpty) return;
     final chatProv = context.read<ChatProvider>();
-    Chat? target = chatProv.chats.where((c) => (senderId > 0 && (c.id == senderId || c.participantId == senderId))).firstOrNull;
+    Chat? target = chatProv.chats.where((c) => (senderId > 0 && c.participantId == senderId)).firstOrNull;
     if (target == null && senderName.isNotEmpty) {
       target = chatProv.chats.where((c) => c.title.toLowerCase() == senderName.toLowerCase()).firstOrNull;
     }
@@ -2577,7 +2580,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
     Navigator.of(context).push(
       TelegramProfileRoute(
-        builder: (_) => UserProfileScreen(chat: target!),
+        builder: (_) => UserProfileScreen(chat: target!, fromChat: target.id == widget.chat.id),
       ),
     );
   }
@@ -2815,7 +2818,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       } else {
         Navigator.of(context).push(
           TelegramProfileRoute(
-            builder: (_) => UserProfileScreen(chat: localMatch),
+            builder: (_) => UserProfileScreen(chat: localMatch, fromChat: localMatch.id == widget.chat.id),
           ),
         );
       }
@@ -2844,7 +2847,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         } else {
           Navigator.of(context).push(
             TelegramProfileRoute(
-              builder: (_) => UserProfileScreen(chat: chat),
+              builder: (_) => UserProfileScreen(chat: chat, fromChat: chat.id == widget.chat.id),
             ),
           );
         }

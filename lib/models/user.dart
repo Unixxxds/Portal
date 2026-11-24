@@ -17,6 +17,11 @@ class User {
   final List<String> secondaryUsernames;
   final int? pinnedChannelId;
   final String? profileColor;
+  final String privacyLastSeen;
+  final String privacySparks;
+  final String privacyAvatar;
+  final bool hideSparks;
+  final bool profileCompleted;
 
   User({
     required this.id,
@@ -37,6 +42,11 @@ class User {
     this.secondaryUsernames = const [],
     this.pinnedChannelId,
     this.profileColor,
+    this.privacyLastSeen = 'all',
+    this.privacySparks = 'all',
+    this.privacyAvatar = 'all',
+    this.hideSparks = false,
+    this.profileCompleted = false,
   });
 
   String get fullName {
@@ -92,6 +102,11 @@ class User {
               ? json['channel_id'] as int
               : int.tryParse(json['pinned_channel_id']?.toString() ?? json['channel_id']?.toString() ?? '')),
       profileColor: json['profile_color']?.toString() ?? json['profileColor']?.toString(),
+      privacyLastSeen: json['privacy_last_seen']?.toString() ?? 'all',
+      privacySparks: json['privacy_sparks']?.toString() ?? 'all',
+      privacyAvatar: json['privacy_avatar']?.toString() ?? 'all',
+      hideSparks: json['hide_sparks'] == true || json['hide_sparks'] == 1 || json['hideSparks'] == true,
+      profileCompleted: json['profile_completed'] == true || json['profile_completed'] == 1 || json['profileCompleted'] == true,
       secondaryUsernames: (json['secondary_usernames'] is List)
           ? (json['secondary_usernames'] as List)
               .map((e) => e.toString().trim().replaceFirst(RegExp(r'^@+'), ''))
@@ -132,6 +147,11 @@ class User {
       'secondary_usernames': secondaryUsernames.join(','),
       'pinned_channel_id': pinnedChannelId,
       'profile_color': profileColor ?? '',
+      'privacy_last_seen': privacyLastSeen,
+      'privacy_sparks': privacySparks,
+      'privacy_avatar': privacyAvatar,
+      'hide_sparks': hideSparks ? 1 : 0,
+      'profile_completed': profileCompleted ? 1 : 0,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -173,6 +193,11 @@ class User {
       lastSeen: map['last_seen']?.toString(),
       pinnedChannelId: parsedChannelId,
       profileColor: map['profile_color']?.toString(),
+      privacyLastSeen: map['privacy_last_seen']?.toString() ?? 'all',
+      privacySparks: map['privacy_sparks']?.toString() ?? 'all',
+      privacyAvatar: map['privacy_avatar']?.toString() ?? 'all',
+      hideSparks: map['hide_sparks'] == 1 || map['hide_sparks'] == true || map['hideSparks'] == true,
+      profileCompleted: map['profile_completed'] == 1 || map['profile_completed'] == true,
       secondaryUsernames: (map['secondary_usernames'] is String && (map['secondary_usernames'] as String).isNotEmpty)
           ? (map['secondary_usernames'] as String)
               .split(',')
@@ -204,6 +229,11 @@ class User {
     bool clearPinnedChannel = false,
     String? profileColor,
     bool clearProfileColor = false,
+    String? privacyLastSeen,
+    String? privacySparks,
+    String? privacyAvatar,
+    bool? hideSparks,
+    bool? profileCompleted,
   }) {
     return User(
       id: id ?? this.id,
@@ -224,6 +254,11 @@ class User {
       secondaryUsernames: secondaryUsernames ?? this.secondaryUsernames,
       pinnedChannelId: clearPinnedChannel ? null : (pinnedChannelId ?? this.pinnedChannelId),
       profileColor: clearProfileColor ? null : (profileColor ?? this.profileColor),
+      privacyLastSeen: privacyLastSeen ?? this.privacyLastSeen,
+      privacySparks: privacySparks ?? this.privacySparks,
+      privacyAvatar: privacyAvatar ?? this.privacyAvatar,
+      hideSparks: hideSparks ?? this.hideSparks,
+      profileCompleted: profileCompleted ?? this.profileCompleted,
     );
   }
 }

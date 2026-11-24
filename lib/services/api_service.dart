@@ -416,7 +416,7 @@ class ApiService {
               .toList();
         }
         if (data is Map) {
-          final map = data as Map;
+          final map = data;
           final list = map['gifts'] ?? map['user_gifts'] ?? map['userGifts'] ?? map['data'] ?? map['items'];
           if (list is List) {
             return list
@@ -670,9 +670,7 @@ class ApiService {
     String? description,
     String? avatar,
   }) async {
-    final cleanUsername = username != null
-        ? username.replaceFirst(RegExp(r'^@+'), '').trim()
-        : null;
+    final cleanUsername = username?.replaceFirst(RegExp(r'^@+'), '').trim();
     final payload = <String, dynamic>{
       if (title != null) 'title': title.trim(),
       if (cleanUsername != null && cleanUsername.isNotEmpty) 'username': cleanUsername,
@@ -969,6 +967,29 @@ class ApiService {
       debugPrint('ApiService.deleteFcmToken error: $e');
       return false;
     }
+  }
+
+  // Обновление настроек конфиденциальности
+  Future<Map<String, dynamic>> updatePrivacySettings({
+    String? privacyLastSeen,
+    String? privacySparks,
+    String? privacyAvatar,
+  }) async {
+    try {
+      final payload = <String, dynamic>{};
+      if (privacyLastSeen != null) payload['privacy_last_seen'] = privacyLastSeen;
+      if (privacySparks != null) payload['privacy_sparks'] = privacySparks;
+      if (privacyAvatar != null) payload['privacy_avatar'] = privacyAvatar;
+
+      final res = await _dio.post('/api/user/privacy', data: payload);
+      if (res.data is Map<String, dynamic>) {
+        return res.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('ApiService.updatePrivacySettings error: $e');
+      rethrow;
+    }
+    return {'success': false};
   }
 }
 
