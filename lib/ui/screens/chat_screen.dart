@@ -65,6 +65,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Message? _editingMessage;
   late bool _isSubscribed;
   late int _subscribersCount;
+  int _membersCount = 0;
+  int _onlineMembersCount = 0;
   bool _isSubscribing = false;
   String? _liveVerification;
   bool? _liveIsPremium;
@@ -189,6 +191,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _blinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(_blinkController);
     _isSubscribed = widget.chat.isSubscribed;
     _subscribersCount = widget.chat.subscribersCount;
+    _membersCount = widget.chat.membersCount > 0 ? widget.chat.membersCount : widget.chat.subscribersCount;
     _liveVerification = widget.chat.effectiveVerification;
     _liveIsPremium = widget.chat.isPremium;
     _channelOwnerId = widget.chat.ownerId;
@@ -284,6 +287,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
       }).catchError((_) {});
     }
+
+    if (widget.chat.isGroup) {
+      _loadGroupData();
+    }
+  }
+
+  void _loadGroupData() async {
+    try {
+      final members = await ApiService.instance.getGroupMembers(widget.chat.id);
+      if (!mounted) return;
+      int online = 0;
+      for (final m in members) {
+        if (m['is_online'] == 1 || m['is_online'] == true) {
+          online++;
+        }
+      }
+      setState(() {
+        if (members.isNotEmpty) {
+          _membersCount = members.length;
+        }
+        _onlineMembersCount = online;
+      });
+    } catch (_) {}
   }
 
   Future<void> _checkUserPresence() async {
@@ -1188,12 +1214,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ? 'печатает...'
         : (chat.isChannel
             ? UserActivityHelper.formatSubscribers(_subscribersCount)
-            : UserActivityHelper.formatActivity(
-                isOnline: effectiveOnline,
-                lastSeen: isActivityHidden ? null : chat.lastSeen,
-                isChannel: chat.isChannel,
-                isActivityHidden: isActivityHidden,
-              ));
+            : (chat.isGroup
+                ? UserActivityHelper.formatMembers(
+                    _membersCount > 0 ? _membersCount : (chat.membersCount > 0 ? chat.membersCount : 1),
+                    onlineCount: _onlineMembersCount > 0 ? _onlineMembersCount : null,
+                  )
+                : UserActivityHelper.formatActivity(
+                    isOnline: effectiveOnline,
+                    lastSeen: isActivityHidden ? null : chat.lastSeen,
+                    isChannel: chat.isChannel,
+                    isActivityHidden: isActivityHidden,
+                  )));
     final statusColor = isTyping
         ? Colors.white
         : (effectiveOnline ? AppTheme.statusOnline : const Color(0xFF929292));
@@ -1273,7 +1304,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       scale: _headerBounceAnimation,
                       child: GestureDetector(
                       onTap: () {
-                        if (chat.isChannel) {
+                        if (chat.isChannel || chat.isGroup) {
                           _showChannelInfoModal(context, chat);
                         } else {
                           Navigator.push(
@@ -2612,49 +2643,136 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return _buildPureEmojiBubble(effectiveMsg, isMe);
     }
 
-    final double maxBubbleWidth = MediaQuery.of(context).size.width * 0.78;
+    final bool showGroupAvatar = widget.chat.isGroup && !isMe;
+    final double maxBubbleWidth = MediaQuery.of(context).size.width * (showGroupAvatar ? 0.72 : 0.78);
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Builder(
-        builder: (bubbleContext) {
-          final bubbleWidget = _buildBubbleBody(msg, isMe, maxBubbleWidth, forwardedInfo: fwd);
-          return GestureDetector(
-            onLongPress: () => _showMessageContextMenu(
-              msg,
-              bubbleContext: bubbleContext,
-              customBubbleWidget: Container(
-                constraints: BoxConstraints(
-                  maxWidth: maxBubbleWidth,
-                  minWidth: 50,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showGroupAvatar) ...[
+            Padding(
+              padding: const EdgeInsets.only(right: 6, bottom: 2),
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  final memberChat = Chat(
+                    id: msg.senderId,
+                    title: msg.senderName.isNotEmpty ? msg.senderName : 'Пользователь',
+                    type: 'direct',
+                    avatar: msg.senderAvatar,
+                    participantId: msg.senderId,
+                    verification: msg.senderVerification,
+                    isPremium: msg.senderIsPremium,
+                  );
+                  Navigator.push(
+                    context,
+                    TelegramProfileRoute(
+                      builder: (context) => UserProfileScreen(chat: memberChat, fromChat: true),
+                    ),
+                  );
+                },
+                child: AvatarWidget(
+                  avatarUrl: msg.senderAvatar,
+                  title: msg.senderName.isNotEmpty ? msg.senderName : 'U',
+                  size: 32,
                 ),
-                child: bubbleWidget,
               ),
-              isMe: isMe,
             ),
-            onSecondaryTap: () => _showMessageContextMenu(
-              msg,
-              bubbleContext: bubbleContext,
-              customBubbleWidget: Container(
-                constraints: BoxConstraints(
-                  maxWidth: maxBubbleWidth,
-                  minWidth: 50,
-                ),
-                child: bubbleWidget,
-              ),
-              isMe: isMe,
+          ],
+          Flexible(
+            child: Builder(
+              builder: (bubbleContext) {
+                final bubbleWidget = _buildBubbleBody(msg, isMe, maxBubbleWidth, forwardedInfo: fwd);
+                return GestureDetector(
+                  onLongPress: () => _showMessageContextMenu(
+                    msg,
+                    bubbleContext: bubbleContext,
+                    customBubbleWidget: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: maxBubbleWidth,
+                        minWidth: 50,
+                      ),
+                      child: bubbleWidget,
+                    ),
+                    isMe: isMe,
+                  ),
+                  onSecondaryTap: () => _showMessageContextMenu(
+                    msg,
+                    bubbleContext: bubbleContext,
+                    customBubbleWidget: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: maxBubbleWidth,
+                        minWidth: 50,
+                      ),
+                      child: bubbleWidget,
+                    ),
+                    isMe: isMe,
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 2.5),
+                    constraints: BoxConstraints(
+                      maxWidth: maxBubbleWidth,
+                      minWidth: 50,
+                    ),
+                    child: bubbleWidget,
+                  ),
+                );
+              },
             ),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 2.5),
-              constraints: BoxConstraints(
-                maxWidth: maxBubbleWidth,
-                minWidth: 50,
-              ),
-              child: bubbleWidget,
-            ),
-          );
-        },
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildGroupSenderHeader(Message msg) {
+    final senderName = msg.senderName.isNotEmpty ? msg.senderName : 'Участник';
+    final isOwner = (widget.chat.ownerId != null && msg.senderId == widget.chat.ownerId) || msg.senderRole == 'owner';
+    final hasVerif = VerificationBadge.isVerified(msg.senderVerification);
+    final isPrem = msg.senderIsPremium;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            senderName,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontDisplay,
+              color: Color(0xFF3B98FF),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              letterSpacing: -0.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (hasVerif) ...[
+          const SizedBox(width: 4),
+          VerificationBadge(verification: msg.senderVerification, size: 14),
+        ],
+        if (isPrem) ...[
+          const SizedBox(width: 4),
+          const PremiumBadge(size: 14),
+        ],
+        if (isOwner) ...[
+          const SizedBox(width: 8),
+          const Text(
+            'владелец',
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              color: Color(0xFFA594F9),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -2678,13 +2796,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             const SizedBox(height: 5),
           ],
 
-          // Sender name if in group
-          if (!isMe && effectiveMsg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
+          // Sender name & role & badges for groups
+          if (!isMe && widget.chat.isGroup) ...[
+            _buildGroupSenderHeader(effectiveMsg),
+            const SizedBox(height: 3),
+          ] else if (!isMe && effectiveMsg.senderName.isNotEmpty && !widget.chat.isDirect) ...[
             Text(
               effectiveMsg.senderName,
               style: const TextStyle(
                 fontFamily: AppTheme.fontDisplay,
-                color: Colors.white,
+                color: Color(0xFF3B98FF),
                 fontWeight: FontWeight.w700,
                 fontSize: 12.5,
               ),

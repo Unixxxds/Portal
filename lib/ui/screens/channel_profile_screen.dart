@@ -19,7 +19,10 @@ import '../../services/media_cache_service.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/badges.dart';
 import '../widgets/fullscreen_gallery_viewer.dart';
+import '../widgets/telegram_profile_route.dart';
+import '../../core/user_activity_helper.dart';
 import 'edit_channel_screen.dart';
+import 'user_profile_screen.dart';
 
 class ChannelProfileScreen extends StatefulWidget {
   final Chat chat;
@@ -43,11 +46,16 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   List<String> _channelPhotos = [];
   bool _isLoadingPhotos = true;
 
+  List<Map<String, dynamic>> _members = [];
+  bool _isLoadingMembers = false;
+
   @override
   void initState() {
     super.initState();
     _currentChat = widget.chat;
-    _subscribersCount = widget.chat.subscribersCount;
+    _subscribersCount = widget.chat.isGroup
+        ? (widget.chat.membersCount > 0 ? widget.chat.membersCount : widget.chat.subscribersCount)
+        : widget.chat.subscribersCount;
     _isSubscribed = widget.chat.isSubscribed;
     _ownerId = widget.chat.ownerId;
     _liveVerification = widget.chat.effectiveVerification;
@@ -55,8 +63,87 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
 
     _checkOwner();
     _loadMuteState();
-    _loadChannelDetails();
-    _loadChannelPhotos();
+    if (_currentChat.isGroup) {
+      _loadGroupDetailsAndMembers();
+    } else {
+      _loadChannelDetails();
+      _loadChannelPhotos();
+    }
+  }
+
+  Future<void> _loadGroupDetailsAndMembers() async {
+    setState(() => _isLoadingMembers = true);
+    try {
+      final group = await ApiService.instance.getGroup(_currentChat.id);
+      final members = await ApiService.instance.getGroupMembers(_currentChat.id);
+      if (mounted) {
+        setState(() {
+          _members = members;
+          _isLoadingMembers = false;
+          if (group != null) {
+            _subscribersCount = group['members_count'] is int
+                ? group['members_count'] as int
+                : int.tryParse(group['members_count']?.toString() ?? '') ?? members.length;
+            if (group['owner_id'] != null) {
+              _ownerId = group['owner_id'] as int;
+              _checkOwner();
+            }
+          } else if (members.isNotEmpty) {
+            _subscribersCount = members.length;
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingMembers = false);
+    }
+  }
+
+  Future<void> _leaveGroup() async {
+    HapticFeedback.lightImpact();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF191919),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0x1AFFFFFF), width: 1.0),
+        ),
+        title: const Text('Покинуть группу?', style: TextStyle(color: Colors.white, fontFamily: AppTheme.fontDisplay)),
+        content: const Text(
+          'Вы действительно хотите покинуть эту группу?',
+          style: TextStyle(color: Color(0xFF8E8E93), fontFamily: AppTheme.fontText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена', style: TextStyle(color: Colors.white)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Покинуть', style: TextStyle(color: Color(0xFFFF3B30), fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      await ApiService.instance.leaveGroup(_currentChat.id);
+      if (!mounted) return;
+      final chatProv = context.read<ChatProvider>();
+      await chatProv.syncBootstrap();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ошибка при выходе из группы: $e'),
+          backgroundColor: const Color(0xFF191919),
+        ),
+      );
+    }
   }
 
   Future<void> _loadMuteState() async {
@@ -312,7 +399,10 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
 
   void _copyLink() {
     final cleanUsername = (_currentChat.username ?? 'channel').replaceFirst(RegExp(r'^@+'), '');
-    final url = 'https://portalmsg.ru/$cleanUsername';
+    final isGroupPrivate = _currentChat.isGroup && (_currentChat.inviteCode != null && _currentChat.inviteCode!.isNotEmpty);
+    final url = isGroupPrivate
+        ? 'https://portalmsg.ru/${_currentChat.inviteCode}'
+        : 'https://portalmsg.ru/$cleanUsername';
     Clipboard.setData(ClipboardData(text: url));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -327,7 +417,10 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final cleanUsername = (_currentChat.username ?? 'channel').replaceFirst(RegExp(r'^@+'), '');
-    final linkText = 'https://portalmsg.ru/$cleanUsername';
+    final isGroupPrivate = _currentChat.isGroup && (_currentChat.inviteCode != null && _currentChat.inviteCode!.isNotEmpty);
+    final linkText = isGroupPrivate
+        ? 'https://portalmsg.ru/${_currentChat.inviteCode}'
+        : 'https://portalmsg.ru/$cleanUsername';
     final descText = (_currentChat.description ?? '').trim();
     final hasVerified = VerificationBadge.isVerified(_liveVerification);
 
@@ -444,9 +537,11 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                     ),
                     const SizedBox(height: 4),
 
-                    // Subscribers Count
+                    // Subscribers / Members Count
                     Text(
-                      _formatSubscribers(_subscribersCount),
+                      _currentChat.isGroup
+                          ? UserActivityHelper.formatMembers(_subscribersCount > 0 ? _subscribersCount : _members.length)
+                          : _formatSubscribers(_subscribersCount),
                       style: const TextStyle(
                         color: Color(0xFF8E8E93),
                         fontSize: 14,
@@ -473,14 +568,23 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                           _buildRoundActionButton(
                             icon: Icons.chat_bubble_rounded,
                             label: 'чат',
-                            onTap: () {}, // Неактивна по требованию
+                            onTap: () {
+                              Navigator.pop(context);
+                            },
                           ),
                           const SizedBox(width: 24),
-                          _buildRoundActionButton(
-                            icon: _isSubscribed ? Icons.logout_rounded : Icons.add_rounded,
-                            label: _isSubscribed ? 'покинуть' : 'подписаться',
-                            onTap: _toggleSubscription,
-                          ),
+                          if (_currentChat.isGroup)
+                            _buildRoundActionButton(
+                              icon: Icons.logout_rounded,
+                              label: 'покинуть',
+                              onTap: _leaveGroup,
+                            )
+                          else
+                            _buildRoundActionButton(
+                              icon: _isSubscribed ? Icons.logout_rounded : Icons.add_rounded,
+                              label: _isSubscribed ? 'покинуть' : 'подписаться',
+                              onTap: _toggleSubscription,
+                            ),
                         ],
                       ),
                     ),
@@ -571,7 +675,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                       ),
                     ),
 
-                    if (_isOwner) ...[
+                    if (_isOwner && !_currentChat.isGroup) ...[
                       const SizedBox(height: 14),
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -595,7 +699,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                       ),
                     ],
 
-                    if (_isOwner) ...[
+                    if (_isOwner && !_currentChat.isGroup) ...[
                       const SizedBox(height: 12),
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -666,8 +770,76 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
 
                     const SizedBox(height: 20),
 
+                    if (_currentChat.isGroup) ...[
+                      const SizedBox(height: 18),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'УЧАСТНИКИ (${_members.length})',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.5),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.8,
+                              fontFamily: AppTheme.fontDisplay,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C1C1E),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: _isLoadingMembers && _members.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : (_members.isEmpty
+                                ? const Padding(
+                                    padding: EdgeInsets.all(20),
+                                    child: Center(
+                                      child: Text(
+                                        'Нет участников',
+                                        style: TextStyle(color: Color(0xFF8E8E93)),
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: _members.length,
+                                    separatorBuilder: (_, __) => const Divider(
+                                      height: 1,
+                                      color: Color(0xFF2C2C2E),
+                                      indent: 72,
+                                      endIndent: 16,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final m = _members[index];
+                                      return _buildMemberTile(m, index == 0, index == _members.length - 1);
+                                    },
+                                  )),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+
                     // Photos Grid ("плитки с фотографиями которые отправил сам канал")
-                    if (_channelPhotos.isNotEmpty) ...[
+                    if (!_currentChat.isGroup && _channelPhotos.isNotEmpty) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                         child: Row(
@@ -758,7 +930,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 28),
-                    ] else if (_isLoadingPhotos) ...[
+                    ] else if (!_currentChat.isGroup && _isLoadingPhotos) ...[
                       const Padding(
                         padding: EdgeInsets.all(24),
                         child: Center(
@@ -774,6 +946,115 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                     ],
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMemberTile(Map<String, dynamic> m, bool isFirst, bool isLast) {
+    final rawName = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
+    final displayName = rawName.isNotEmpty ? rawName : (m['username']?.toString() ?? 'Пользователь');
+    final isOwner = _ownerId != null && m['id'] == _ownerId;
+    final verif = m['verification']?.toString();
+    final hasVerif = VerificationBadge.isVerified(verif);
+    final isPrem = m['is_premium'] == 1 || m['is_premium'] == true;
+    final isOnline = m['is_online'] == 1 || m['is_online'] == true;
+    final lastSeen = m['last_seen']?.toString();
+    final activity = UserActivityHelper.formatActivity(isOnline: isOnline, lastSeen: lastSeen);
+    final username = m['username']?.toString() ?? '';
+
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        final memberChat = Chat(
+          id: m['id'] as int,
+          title: displayName,
+          type: 'direct',
+          avatar: m['avatar']?.toString() ?? '',
+          username: username.isNotEmpty ? username : null,
+          verification: verif,
+          isPremium: isPrem,
+          lastSeen: lastSeen,
+          isOnline: isOnline,
+          participantId: m['id'] as int,
+        );
+        Navigator.push(
+          context,
+          TelegramProfileRoute(
+            builder: (_) => UserProfileScreen(chat: memberChat),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.vertical(
+        top: isFirst ? const Radius.circular(18) : Radius.zero,
+        bottom: isLast ? const Radius.circular(18) : Radius.zero,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            AvatarWidget(
+              avatarUrl: m['avatar']?.toString() ?? '',
+              title: displayName,
+              size: 42,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: AppTheme.fontDisplay,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (hasVerif) ...[
+                        const SizedBox(width: 4),
+                        VerificationBadge(verification: verif, size: 14),
+                      ],
+                      if (isPrem) ...[
+                        const SizedBox(width: 4),
+                        const PremiumBadge(size: 14),
+                      ],
+                      if (isOwner) ...[
+                        const Spacer(),
+                        const Text(
+                          'владелец',
+                          style: TextStyle(
+                            color: Color(0xFFA594F9),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            fontFamily: AppTheme.fontText,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    username.isNotEmpty ? '@$username • $activity' : activity,
+                    style: const TextStyle(
+                      color: Color(0xFF8E8E93),
+                      fontSize: 13,
+                      fontFamily: AppTheme.fontText,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],

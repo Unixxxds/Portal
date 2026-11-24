@@ -778,8 +778,121 @@ class ApiService {
         final raw = response.data['viewsCount'];
         return raw is int ? raw : int.tryParse(raw.toString());
       }
-    } catch (_) {}
-    return null;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ===========================================================================
+  // 14. ГРУППЫ (GROUPS)
+  // ===========================================================================
+
+  // 14.1 Создание новой группы
+  Future<Map<String, dynamic>> createGroup({
+    required String title,
+    String? avatar,
+    String? description,
+    String? username,
+    bool isPublic = false,
+    String? inviteCode,
+  }) async {
+    try {
+      final cleanUsername = (username != null && username.isNotEmpty)
+          ? username.trim().replaceFirst(RegExp(r'^@+'), '')
+          : null;
+      final response = await _dio.post(
+        '/api/groups',
+        data: {
+          'title': title.trim(),
+          'avatar': avatar ?? '',
+          'description': description ?? '',
+          'username': cleanUsername,
+          'isPublic': isPublic,
+          'inviteCode': inviteCode,
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ?? e.response!.data['message'] ?? e.message)
+          : e.message;
+      throw Exception(msg ?? 'Ошибка при создании группы');
+    }
+  }
+
+  // 14.2 Проверка доступности юзернейма группы
+  Future<bool> checkGroupUsername(String username) async {
+    try {
+      final clean = username.trim().replaceFirst(RegExp(r'^@+'), '');
+      final res = await _dio.get(
+        '/api/groups/check-username',
+        queryParameters: {'username': clean},
+      );
+      return res.data is Map && res.data['available'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 14.3 Получение участников группы
+  Future<List<Map<String, dynamic>>> getGroupMembers(int chatId) async {
+    try {
+      final res = await _dio.get('/api/groups/$chatId/members');
+      if (res.data is Map && res.data['members'] is List) {
+        return (res.data['members'] as List)
+            .whereType<Map<String, dynamic>>()
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // 14.4 Присоединение к группе по инвайт-коду
+  Future<Map<String, dynamic>> joinGroup(String inviteCode) async {
+    try {
+      final res = await _dio.post(
+        '/api/groups/join',
+        data: {'inviteCode': inviteCode.trim()},
+      );
+      if (res.data is Map<String, dynamic>) {
+        return res.data as Map<String, dynamic>;
+      }
+      return {'success': true};
+    } on DioException catch (e) {
+      final msg = e.response?.data is Map
+          ? (e.response!.data['error'] ?? e.response!.data['message'] ?? e.message)
+          : e.message;
+      throw Exception(msg ?? 'Не удалось вступить в группу');
+    }
+  }
+
+  // 14.5 Выход из группы
+  Future<bool> leaveGroup(int chatId) async {
+    try {
+      final res = await _dio.post('/api/groups/$chatId/leave');
+      return res.data is Map && res.data['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 14.6 Получение информации о группе
+  Future<Map<String, dynamic>?> getGroup(int chatId) async {
+    try {
+      final res = await _dio.get('/api/groups/$chatId');
+      if (res.data is Map && res.data['group'] is Map) {
+        return res.data['group'] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   // 14. Загрузка файла фотографии на сервер

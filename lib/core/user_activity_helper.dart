@@ -78,6 +78,27 @@ class UserActivityHelper {
     return '$n подписчиков';
   }
 
+  static String formatMembers(int count, {int? onlineCount}) {
+    final n = count.abs();
+    final mod10 = n % 10;
+    final mod100 = n % 100;
+    String word;
+    if (mod100 >= 11 && mod100 <= 19) {
+      word = '$n участников';
+    } else if (mod10 == 1) {
+      word = '$n участник';
+    } else if (mod10 >= 2 && mod10 <= 4) {
+      word = '$n участника';
+    } else {
+      word = '$n участников';
+    }
+
+    if (onlineCount != null && onlineCount > 0) {
+      return '$word, $onlineCount в сети';
+    }
+    return word;
+  }
+
   static DateTime _safeParseDate(String dateInput) {
     var s = dateInput.trim();
     if (RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(s)) {

@@ -101,7 +101,8 @@ class _AuthGateState extends State<AuthGate> {
 
       case AuthStatus.authenticated:
         // As requested: prompt user for push notifications as soon as they enter the app!
-        WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndRequestPush());
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _checkAndRequestPush());
         return const MainScreen();
 
       case AuthStatus.unauthenticated:

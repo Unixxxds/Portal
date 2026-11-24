@@ -22,6 +22,7 @@ class Chat {
   final bool isPremium;
   final List<String> secondaryUsernames;
   final int subscribersCount;
+  final int membersCount;
   final bool isSubscribed;
   final int artifacts;
   final bool isActivityHidden;
@@ -29,6 +30,8 @@ class Chat {
   final String? privacyAvatar;
   final String? privacySparks;
   final bool hideSparks;
+  final bool isGroupChat;
+  final String? inviteCode;
 
   Chat({
     required this.id,
@@ -52,6 +55,7 @@ class Chat {
     this.isPremium = false,
     this.secondaryUsernames = const [],
     this.subscribersCount = 0,
+    this.membersCount = 0,
     this.isSubscribed = false,
     this.artifacts = 0,
     this.isActivityHidden = false,
@@ -59,6 +63,8 @@ class Chat {
     this.privacyAvatar,
     this.privacySparks,
     this.hideSparks = false,
+    this.isGroupChat = false,
+    this.inviteCode,
   });
 
   String get effectiveVerification {
@@ -100,8 +106,12 @@ class Chat {
       title.toLowerCase().contains('избранное') ||
       title.toLowerCase().contains('сохранен') ||
       title.toLowerCase() == 'saved messages';
+  bool get isGroup =>
+      isGroupChat ||
+      type == 'group' ||
+      (!isChannel && !isSaved && !isDirect && ownerId != null);
   bool get isDirect =>
-      !isChannel && !isSaved && (type == 'direct' || type == 'dialog' || type == 'private');
+      !isChannel && !isSaved && !isGroup && (type == 'direct' || type == 'dialog' || type == 'private');
 
   String get displayLastMessage {
     final text = lastMessageText.trim();
@@ -185,6 +195,7 @@ class Chat {
     bool? isPremium,
     List<String>? secondaryUsernames,
     int? subscribersCount,
+    int? membersCount,
     bool? isSubscribed,
     int? artifacts,
     bool? isActivityHidden,
@@ -192,6 +203,8 @@ class Chat {
     String? privacyAvatar,
     String? privacySparks,
     bool? hideSparks,
+    bool? isGroupChat,
+    String? inviteCode,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -215,6 +228,7 @@ class Chat {
       isPremium: isPremium ?? this.isPremium,
       secondaryUsernames: secondaryUsernames ?? this.secondaryUsernames,
       subscribersCount: subscribersCount ?? this.subscribersCount,
+      membersCount: membersCount ?? this.membersCount,
       isSubscribed: isSubscribed ?? this.isSubscribed,
       artifacts: artifacts ?? this.artifacts,
       isActivityHidden: isActivityHidden ?? this.isActivityHidden,
@@ -222,6 +236,8 @@ class Chat {
       privacyAvatar: privacyAvatar ?? this.privacyAvatar,
       privacySparks: privacySparks ?? this.privacySparks,
       hideSparks: hideSparks ?? this.hideSparks,
+      isGroupChat: isGroupChat ?? this.isGroupChat,
+      inviteCode: inviteCode ?? this.inviteCode,
     );
   }
 
@@ -278,6 +294,14 @@ class Chat {
                 : const <String>[];
 
     final isChan = json['is_channel'] == 1 || json['is_channel'] == true;
+    final isGrp = json['is_group'] == 1 || json['is_group'] == true || json['type'] == 'group';
+    final invCode = json['invite_code']?.toString();
+    final mCount = json['members_count'] is int
+        ? json['members_count'] as int
+        : (int.tryParse(json['members_count']?.toString() ?? '') ??
+            (json['subscribers_count'] is int
+                ? json['subscribers_count'] as int
+                : int.tryParse(json['subscribers_count']?.toString() ?? '') ?? 0));
 
     final rawVerif = isChan
         ? (json['verification']?.toString() ?? json['channel_verification']?.toString())
@@ -300,7 +324,7 @@ class Chat {
           ? json['id']
           : int.tryParse(json['id'].toString()) ?? 0,
       title: titleStr,
-      type: json['type']?.toString() ?? (isChan ? 'channel' : 'direct'),
+      type: json['type']?.toString() ?? (isChan ? 'channel' : (isGrp ? 'group' : 'direct')),
       avatar: json['avatar']?.toString() ?? '',
       lastMessageText: lastText,
       lastMessageTime: lastTime,
@@ -329,6 +353,7 @@ class Chat {
       subscribersCount: json['subscribers_count'] is int
           ? json['subscribers_count'] as int
           : int.tryParse(json['subscribers_count']?.toString() ?? '') ?? 0,
+      membersCount: mCount,
       isSubscribed: json['is_subscribed'] == 1 || json['is_subscribed'] == true,
       artifacts: json['artifacts'] is int
           ? json['artifacts'] as int
@@ -342,6 +367,8 @@ class Chat {
       hideSparks: json['hide_sparks'] == true ||
           json['hide_sparks'] == 1 ||
           json['hideSparks'] == true,
+      isGroupChat: isGrp,
+      inviteCode: invCode,
     );
   }
 
@@ -367,8 +394,10 @@ class Chat {
       'verification': verification ?? 'none',
       'is_premium': isPremium ? 1 : 0,
       'subscribers_count': subscribersCount,
+      'members_count': membersCount,
       'is_subscribed': isSubscribed ? 1 : 0,
       'artifacts': artifacts,
+      'invite_code': inviteCode,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -379,10 +408,11 @@ class Chat {
         (rawVerif != null && rawVerif.isNotEmpty && rawVerif != 'none')
             ? rawVerif
             : null;
+    final isGrp = map['type'] == 'group' || (map['is_group'] as int? ?? 0) == 1;
     return Chat(
       id: map['id'] as int,
       title: map['title']?.toString() ?? 'Чат',
-      type: map['type']?.toString() ?? 'direct',
+      type: map['type']?.toString() ?? (isGrp ? 'group' : 'direct'),
       avatar: map['avatar']?.toString() ?? '',
       lastMessageText: map['last_message_text']?.toString() ?? '',
       lastMessageTime: map['last_message_time']?.toString() ?? '',
@@ -400,6 +430,7 @@ class Chat {
       verification: cleanVerif,
       isPremium: (map['is_premium'] as int? ?? 0) == 1,
       subscribersCount: map['subscribers_count'] as int? ?? 0,
+      membersCount: map['members_count'] as int? ?? (map['subscribers_count'] as int? ?? 0),
       isSubscribed: (map['is_subscribed'] as int? ?? 0) == 1,
       artifacts: map['artifacts'] as int? ?? 0,
       isActivityHidden: (map['is_activity_hidden'] as int? ?? 0) == 1,
@@ -407,6 +438,8 @@ class Chat {
       privacyAvatar: map['privacy_avatar']?.toString(),
       privacySparks: map['privacy_sparks']?.toString(),
       hideSparks: (map['hide_sparks'] as int? ?? 0) == 1,
+      isGroupChat: isGrp,
+      inviteCode: map['invite_code']?.toString(),
     );
   }
 }

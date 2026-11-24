@@ -287,6 +287,12 @@ class DatabaseHelper {
       if (!chatCols.contains('artifacts')) {
         await db.execute("ALTER TABLE chats ADD COLUMN artifacts INTEGER DEFAULT 0;");
       }
+      if (!chatCols.contains('invite_code')) {
+        await db.execute("ALTER TABLE chats ADD COLUMN invite_code TEXT;");
+      }
+      if (!chatCols.contains('members_count')) {
+        await db.execute("ALTER TABLE chats ADD COLUMN members_count INTEGER DEFAULT 0;");
+      }
 
       final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
           .map((e) => e['name']?.toString())
@@ -363,6 +369,15 @@ class DatabaseHelper {
       }
       if (!msgCols.contains('is_viewed')) {
         await db.execute("ALTER TABLE messages ADD COLUMN is_viewed INTEGER DEFAULT 0;");
+      }
+      if (!msgCols.contains('sender_verification')) {
+        await db.execute("ALTER TABLE messages ADD COLUMN sender_verification TEXT DEFAULT 'none';");
+      }
+      if (!msgCols.contains('sender_is_premium')) {
+        await db.execute("ALTER TABLE messages ADD COLUMN sender_is_premium INTEGER DEFAULT 0;");
+      }
+      if (!msgCols.contains('sender_role')) {
+        await db.execute("ALTER TABLE messages ADD COLUMN sender_role TEXT;");
       }
 
       await db.execute('''

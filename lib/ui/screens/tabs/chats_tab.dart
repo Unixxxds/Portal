@@ -13,6 +13,7 @@ import '../../widgets/telegram_chat_route.dart';
 import '../../widgets/telegram_typing_indicator.dart';
 import '../chat_screen.dart';
 import '../create_channel_screen.dart';
+import '../create_group_screen.dart';
 
 class ChatsTab extends StatefulWidget {
   final VoidCallback onOpenProfile;
@@ -552,23 +553,32 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         child: Column(
           children: [
             // =================================================================
-            // HEADER (Centered "Чаты" title, no left or right buttons)
+            // HEADER (Centered "Чаты" title, right circular create button)
             // =================================================================
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: SizedBox(
                 height: 36,
-                child: Center(
-                  child: Text(
-                    'Чаты',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplay,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.3,
-                      color: Colors.white,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Center(
+                      child: Text(
+                        'Чаты',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
-                  ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _buildCreateMenuButton(context),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1031,7 +1041,99 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     );
   }
 
-  // ignore: unused_element
+  Widget _buildCreateMenuButton(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        cardColor: const Color(0xFF1C1C1E),
+        popupMenuTheme: PopupMenuThemeData(
+          color: const Color(0xFF1C1C1E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0x1AFFFFFF), width: 1.0),
+          ),
+          elevation: 8,
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        offset: const Offset(0, 38),
+        tooltip: 'Создать',
+        onSelected: (value) {
+          if (value == 'group') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CreateGroupScreen()),
+            );
+          } else if (value == 'channel') {
+            _handleCreateChannel(context);
+          }
+        },
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.add_rounded,
+              color: Colors.black,
+              size: 20,
+            ),
+          ),
+        ),
+        itemBuilder: (ctx) => const [
+          PopupMenuItem<String>(
+            value: 'group',
+            height: 44,
+            child: Row(
+              children: [
+                Icon(Icons.group_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 12),
+                Text(
+                  'Создать группу',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontFamily: AppTheme.fontText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuDivider(height: 1),
+          PopupMenuItem<String>(
+            value: 'channel',
+            height: 44,
+            child: Row(
+              children: [
+                Icon(Icons.campaign_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 12),
+                Text(
+                  'Создать канал',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontFamily: AppTheme.fontText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleCreateChannel(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final chatProvider = context.read<ChatProvider>();

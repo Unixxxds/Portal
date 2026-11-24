@@ -8,6 +8,9 @@ class Message {
   final bool isRead;
   final String senderName;
   final String senderAvatar;
+  final String senderVerification;
+  final bool senderIsPremium;
+  final String? senderRole;
   final bool isPending; // for optimistic UI sending
   final bool isEdited;
   final int commentsCount;
@@ -24,6 +27,9 @@ class Message {
     this.isRead = false,
     this.senderName = '',
     this.senderAvatar = '',
+    this.senderVerification = 'none',
+    this.senderIsPremium = false,
+    this.senderRole,
     this.isPending = false,
     this.isEdited = false,
     this.commentsCount = 0,
@@ -41,6 +47,9 @@ class Message {
     bool? isRead,
     String? senderName,
     String? senderAvatar,
+    String? senderVerification,
+    bool? senderIsPremium,
+    String? senderRole,
     bool? isPending,
     bool? isEdited,
     int? commentsCount,
@@ -57,6 +66,9 @@ class Message {
       isRead: isRead ?? this.isRead,
       senderName: senderName ?? this.senderName,
       senderAvatar: senderAvatar ?? this.senderAvatar,
+      senderVerification: senderVerification ?? this.senderVerification,
+      senderIsPremium: senderIsPremium ?? this.senderIsPremium,
+      senderRole: senderRole ?? this.senderRole,
       isPending: isPending ?? this.isPending,
       isEdited: isEdited ?? this.isEdited,
       commentsCount: commentsCount ?? this.commentsCount,
@@ -123,6 +135,15 @@ class Message {
         json['isViewed'] == 1 ||
         json['isViewed'] == true;
 
+    final senderVerif = json['sender_verification']?.toString() ??
+        json['senderVerification']?.toString() ??
+        'none';
+    final senderPrem = json['sender_is_premium'] == 1 ||
+        json['sender_is_premium'] == true ||
+        json['senderIsPremium'] == 1 ||
+        json['senderIsPremium'] == true;
+    final senderRole = json['sender_role']?.toString() ?? json['senderRole']?.toString();
+
     return Message(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
       chatId: finalChatId,
@@ -133,6 +154,9 @@ class Message {
       isRead: isRead,
       senderName: senderName,
       senderAvatar: senderAvatar,
+      senderVerification: senderVerif,
+      senderIsPremium: senderPrem,
+      senderRole: senderRole,
       isPending: false,
       isEdited: isEdited,
       commentsCount: commentsCount,
@@ -152,6 +176,9 @@ class Message {
       'is_read': isRead ? 1 : 0,
       'sender_name': senderName,
       'sender_avatar': senderAvatar,
+      'sender_verification': senderVerification,
+      'sender_is_premium': senderIsPremium ? 1 : 0,
+      'sender_role': senderRole,
       'is_edited': isEdited ? 1 : 0,
       'comments_count': commentsCount,
       'views_count': viewsCount,
@@ -170,6 +197,9 @@ class Message {
       isRead: (map['is_read'] as int? ?? 0) == 1,
       senderName: map['sender_name']?.toString() ?? '',
       senderAvatar: map['sender_avatar']?.toString() ?? '',
+      senderVerification: map['sender_verification']?.toString() ?? 'none',
+      senderIsPremium: (map['sender_is_premium'] as int? ?? 0) == 1,
+      senderRole: map['sender_role']?.toString(),
       isPending: false,
       isEdited: (map['is_edited'] as int? ?? 0) == 1,
       commentsCount: (map['comments_count'] as int? ?? map['commentsCount'] as int? ?? 0),
