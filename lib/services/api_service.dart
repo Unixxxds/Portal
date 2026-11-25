@@ -895,6 +895,20 @@ class ApiService {
     }
   }
 
+  // 14.7 Предпросмотр группы по инвайт-коду или юзернейму
+  Future<Map<String, dynamic>?> previewGroup(String inviteCode) async {
+    try {
+      final clean = inviteCode.trim().replaceFirst(RegExp(r'^@+'), '');
+      final res = await _dio.get('/api/groups/preview/$clean');
+      if (res.data is Map && res.data['group'] is Map) {
+        return Map<String, dynamic>.from(res.data['group'] as Map);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // 14. Загрузка файла фотографии на сервер
   Future<String> uploadPhoto(File file) async {
     final fileName = file.path.split(Platform.pathSeparator).last;

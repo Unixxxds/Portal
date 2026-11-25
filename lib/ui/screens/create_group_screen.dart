@@ -273,12 +273,15 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             type: 'group',
             avatar: avatar,
             ownerId: currentUserId,
+            participantId: null,
             username: _isPublic ? username : _generatedInviteCode,
             inviteCode: _isPublic ? null : _generatedInviteCode,
             membersCount: 1,
             subscribersCount: 1,
             isGroupChat: true,
             isSubscribed: true,
+            verification: 'none',
+            isPremium: false,
           );
 
           Navigator.push(

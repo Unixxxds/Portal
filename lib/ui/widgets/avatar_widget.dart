@@ -11,6 +11,7 @@ class AvatarWidget extends StatelessWidget {
   final bool isSaved;
   final bool isBot;
   final bool isChannel;
+  final bool isGroup;
 
   const AvatarWidget({
     super.key,
@@ -21,6 +22,7 @@ class AvatarWidget extends StatelessWidget {
     this.isSaved = false,
     this.isBot = false,
     this.isChannel = false,
+    this.isGroup = false,
   });
 
   Color _getDeterministicColor(String text) {
@@ -201,7 +203,7 @@ class AvatarWidget extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         content,
-        if (isOnline)
+        if (isOnline && !isGroup && !isChannel && !isSaved)
           Positioned(
             right: 0,
             bottom: 0,

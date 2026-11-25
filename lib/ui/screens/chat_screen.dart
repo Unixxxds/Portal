@@ -27,6 +27,7 @@ import '../widgets/badges.dart';
 import '../widgets/formatted_message_text.dart';
 import '../widgets/gift_detail_modal.dart';
 import '../widgets/gift_visuals.dart';
+import '../widgets/group_join_dialog.dart';
 import '../widgets/photo_picker_bottom_sheet.dart';
 import '../widgets/portal_emoji_picker.dart';
 import '../widgets/send_gift_modal.dart';
@@ -192,8 +193,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _isSubscribed = widget.chat.isSubscribed;
     _subscribersCount = widget.chat.subscribersCount;
     _membersCount = widget.chat.membersCount > 0 ? widget.chat.membersCount : widget.chat.subscribersCount;
-    _liveVerification = widget.chat.effectiveVerification;
-    _liveIsPremium = widget.chat.isPremium;
+    _liveVerification = widget.chat.isGroup ? 'none' : widget.chat.effectiveVerification;
+    _liveIsPremium = widget.chat.isGroup ? false : widget.chat.isPremium;
     _channelOwnerId = widget.chat.ownerId;
     _liveTitle = widget.chat.title;
     _liveAvatar = widget.chat.avatar;
@@ -212,7 +213,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _checkUserPresence();
       await chatProv.openChat(
         widget.chat.id,
-        participantId: widget.chat.isChannel ? null : widget.chat.participantId,
+        participantId: widget.chat.isChannel || widget.chat.isGroup ? null : widget.chat.participantId,
         isChannel: widget.chat.isChannel,
       );
       if (mounted) {
@@ -313,7 +314,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _checkUserPresence() async {
-    if (widget.chat.isSaved || widget.chat.isChannel) return;
+    if (widget.chat.isSaved || widget.chat.isChannel || widget.chat.isGroup) return;
     final targetId = widget.chat.participantId ?? widget.chat.id;
     try {
       final profile = await ApiService.instance.getUserProfile(targetId);
@@ -1241,8 +1242,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final effectiveVerif = (_liveVerification != null && _liveVerification != 'none' && _liveVerification!.isNotEmpty)
         ? _liveVerification
         : chat.effectiveVerification;
-    final isVerif = VerificationBadge.isVerified(effectiveVerif);
-    final isPrem = _liveIsPremium ?? chat.isPremium;
+    final isGroup = chat.isGroup;
+    final isVerif = !isGroup && VerificationBadge.isVerified(effectiveVerif);
+    final isPrem = !isGroup && (_liveIsPremium ?? chat.isPremium);
 
     return PreferredSize(
       preferredSize: const Size.fromHeight(62),
@@ -1352,9 +1354,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 avatarUrl: headerAvatar,
                                 title: displayTitle,
                                 size: 36,
-                                isOnline: isOnline,
+                                isOnline: !isGroup && !chat.isChannel && isOnline,
                                 isSaved: chat.isSaved,
                                 isChannel: chat.isChannel,
+                                isGroup: isGroup,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1368,7 +1371,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       // For users: verification badge (dev or user) is to the LEFT of nickname
-                                      if (!chat.isChannel && isVerif) ...[
+                                      if (!chat.isChannel && !isGroup && isVerif) ...[
                                         VerificationBadge(verification: effectiveVerif, size: 18.0),
                                         const SizedBox(width: 5),
                                       ],
@@ -1396,7 +1399,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                       ],
 
                                       // For users: premium star is to the RIGHT of nickname
-                                      if (!chat.isChannel && isPrem) ...[
+                                      if (!chat.isChannel && !isGroup && isPrem) ...[
                                         const SizedBox(width: 5),
                                         const PremiumBadge(size: 18.0),
                                       ],
@@ -1494,38 +1497,64 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ),
                             ],
                           )
-                        : GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                TelegramProfileRoute(
-                                  builder: (context) => UserProfileScreen(chat: chat, fromChat: true),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF191919),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: const Color(0x1AFFFFFF),
-                                  width: 1.0,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.35),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 3),
+                        : (chat.isGroup
+                            ? GestureDetector(
+                                onTap: () => _showChannelInfoModal(context, chat),
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF191919),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0x1AFFFFFF),
+                                      width: 1.0,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.35),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: const Center(
-                                child: Icon(Icons.more_vert_rounded, color: Colors.white, size: 18),
-                              ),
-                            ),
-                          ),
+                                  child: const Center(
+                                    child: Icon(Icons.more_vert_rounded, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              )
+                            : GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    TelegramProfileRoute(
+                                      builder: (context) => UserProfileScreen(chat: chat, fromChat: true),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF191919),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0x1AFFFFFF),
+                                      width: 1.0,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.35),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.more_vert_rounded, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              )),
                   ),
                 ],
               ),
@@ -2897,11 +2926,39 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _handleLinkTap(String rawUrl) {
+  void _handleLinkTap(String rawUrl) async {
     String finalUrl = rawUrl.trim();
     if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = 'https://$finalUrl';
     }
+
+    final uri = Uri.tryParse(finalUrl);
+    if (uri != null &&
+        (uri.host == 'portalmsg.ru' ||
+            uri.host == 'web.portalmsg.ru' ||
+            uri.host == 'www.portalmsg.ru' ||
+            uri.host.contains('portalmsg.ru'))) {
+      final segments = uri.pathSegments.where((s) => s.isNotEmpty && s != 'join').toList();
+      if (segments.isNotEmpty) {
+        final slug = segments.first.trim();
+        try {
+          final groupData = await ApiService.instance.previewGroup(slug);
+          if (mounted && groupData != null) {
+            GroupJoinDialog.show(
+              context,
+              groupData: groupData,
+              inviteCode: slug,
+            );
+            return;
+          }
+        } catch (_) {}
+      }
+    }
+
+    _launchExternalUrl(finalUrl);
+  }
+
+  void _launchExternalUrl(String finalUrl) {
     try {
       if (Platform.isWindows) {
         Process.run('cmd', ['/c', 'start', '', finalUrl]);
@@ -2926,11 +2983,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // 1. Check in already loaded chats
     final localMatch = chatProv.chats.where((c) {
       final u = (c.username ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
-      return u == clean.toLowerCase();
+      final inv = (c.inviteCode ?? '').toLowerCase();
+      return u == clean.toLowerCase() || inv == clean.toLowerCase();
     }).firstOrNull;
 
     if (localMatch != null) {
-      if (localMatch.isChannel) {
+      if (localMatch.isChannel || localMatch.isGroup) {
         Navigator.of(context).push(
           TelegramChatRoute(
             builder: (_) => ChatScreen(chat: localMatch),
@@ -2951,11 +3009,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       final results = await ApiService.instance.searchUsers(clean);
       final exactMatch = results.where((item) {
         final u = (item['username']?.toString() ?? '').replaceFirst(RegExp(r'^@+'), '').toLowerCase();
-        return u == clean.toLowerCase();
+        final inv = (item['invite_code']?.toString() ?? '').toLowerCase();
+        return u == clean.toLowerCase() || inv == clean.toLowerCase();
       }).firstOrNull ?? (results.isNotEmpty ? results.first : null);
 
       if (exactMatch != null && mounted) {
         final isChan = exactMatch['is_channel'] == 1 || exactMatch['is_channel'] == true || exactMatch['type'] == 'channel';
+        final isGrp = exactMatch['is_group'] == 1 || exactMatch['is_group'] == true || exactMatch['type'] == 'group';
+
+        if (isGrp) {
+          final isSubscribed = exactMatch['is_subscribed'] == 1 || exactMatch['is_subscribed'] == true;
+          if (isSubscribed) {
+            final chat = Chat.fromJson(exactMatch);
+            chatProv.addOrUpdateChat(chat);
+            Navigator.of(context).push(
+              TelegramChatRoute(
+                builder: (_) => ChatScreen(chat: chat),
+              ),
+            );
+          } else {
+            GroupJoinDialog.show(
+              context,
+              groupData: exactMatch,
+              inviteCode: exactMatch['invite_code']?.toString() ?? clean,
+            );
+          }
+          return;
+        }
+
         final chat = Chat.fromJson(exactMatch);
         chatProv.addOrUpdateChat(chat);
 

@@ -14,6 +14,7 @@ import '../../widgets/telegram_typing_indicator.dart';
 import '../chat_screen.dart';
 import '../create_channel_screen.dart';
 import '../create_group_screen.dart';
+import '../../widgets/group_join_dialog.dart';
 
 class ChatsTab extends StatefulWidget {
   final VoidCallback onOpenProfile;
@@ -162,6 +163,55 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       return;
     }
 
+    final isGroup = item['is_group'] == 1 ||
+        item['is_group'] == true ||
+        item['type'] == 'group';
+
+    if (isGroup) {
+      final chatId = item['chat_id'] is int
+          ? item['chat_id'] as int
+          : (item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '') ?? 0);
+      final title = (item['title'] ?? item['name'] ?? item['first_name'] ?? 'Группа').toString();
+      final avatar = (item['avatar'] ?? item['avatar_url'] ?? '').toString();
+      final username = item['username']?.toString();
+      final inviteCode = item['invite_code']?.toString() ?? username ?? '';
+      final membersCount = item['members_count'] is int
+          ? item['members_count'] as int
+          : (int.tryParse(item['members_count']?.toString() ?? '') ?? 1);
+      final isSubscribed = item['is_subscribed'] == 1 || item['is_subscribed'] == true;
+
+      Chat? existingChat = chatProvider.chats.where((c) => c.isGroup && c.id == chatId).firstOrNull;
+
+      if (isSubscribed || existingChat != null) {
+        existingChat ??= Chat(
+          id: chatId,
+          title: title,
+          type: 'group',
+          avatar: avatar,
+          username: username,
+          inviteCode: inviteCode,
+          membersCount: membersCount,
+          subscribersCount: membersCount,
+          isGroupChat: true,
+          isSubscribed: true,
+        );
+        await chatProvider.addOrUpdateChat(existingChat);
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            TelegramChatRoute(builder: (context) => ChatScreen(chat: existingChat!)),
+          );
+        }
+      } else {
+        GroupJoinDialog.show(
+          context,
+          groupData: item,
+          inviteCode: inviteCode,
+        );
+      }
+      return;
+    }
+
     // Личный аккаунт (пользователь)
     final targetUserId = item['id'] is int
         ? item['id'] as int
@@ -294,6 +344,9 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final isChannel = item['is_channel'] == 1 ||
         item['is_channel'] == true ||
         item['type'] == 'channel';
+    final isGroup = item['is_group'] == 1 ||
+        item['is_group'] == true ||
+        item['type'] == 'group';
     final rawVerif = item['verification']?.toString() ??
         item['channel_verification']?.toString() ??
         item['sender_verification']?.toString();
@@ -301,8 +354,8 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final fName = item['first_name']?.toString() ?? '';
     final lName = item['last_name']?.toString() ?? '';
     final rawName = '$fName $lName'.trim();
-    final displayName = isChannel
-        ? (item['title'] ?? item['name'] ?? item['first_name'] ?? 'Канал').toString()
+    final displayName = (isChannel || isGroup)
+        ? (item['title'] ?? item['name'] ?? item['first_name'] ?? (isGroup ? 'Группа' : 'Канал')).toString()
         : (rawName.isNotEmpty ? rawName : (item['username']?.toString() ?? 'Пользователь'));
 
     final verification = (rawVerif != null && rawVerif.isNotEmpty && rawVerif != 'none')
@@ -311,10 +364,10 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
            ((uname == 'portal' || (isChannel && displayName.toLowerCase().contains('portal'))) ? 'verified' :
             (uname == 'botfather' ? 'verified' : null)));
 
-    final isVerified = VerificationBadge.isVerified(verification);
-    final isPremium = item['is_premium'] == true ||
+    final isVerified = !isGroup && VerificationBadge.isVerified(verification);
+    final isPremium = !isGroup && (item['is_premium'] == true ||
         item['is_premium'] == 1 ||
-        item['isPremium'] == true;
+        item['isPremium'] == true);
 
     final username = item['username']?.toString() ?? '';
     final avatar = (item['avatar'] ?? '').toString();
@@ -345,12 +398,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
               avatarUrl: avatar,
               title: displayName,
               size: 48,
-              isOnline: isOnline,
+              isOnline: !isChannel && !isGroup && isOnline,
               isChannel: isChannel,
+              isGroup: isGroup,
             ),
             const SizedBox(width: 14),
 
-            // User / Channel details (Right)
+            // User / Channel / Group details (Right)
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -367,9 +421,18 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                         ),
                         const SizedBox(width: 4),
                       ],
+                      // Group icon for groups
+                      if (isGroup) ...[
+                        const Icon(
+                          Icons.group_rounded,
+                          color: Color(0xFF9CA3AF),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 5),
+                      ],
 
                       // For users: verification badge (dev or user) is to the LEFT of the nickname
-                      if (!isChannel && isVerified) ...[
+                      if (!isChannel && !isGroup && isVerified) ...[
                         VerificationBadge(verification: verification, size: 18.5),
                         const SizedBox(width: 5),
                       ],
@@ -397,7 +460,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                       ],
 
                       // For users: premium star is to the RIGHT of the nickname
-                      if (!isChannel && isPremium) ...[
+                      if (!isChannel && !isGroup && isPremium) ...[
                         const SizedBox(width: 5),
                         const PremiumBadge(size: 18.5),
                       ],
@@ -418,7 +481,17 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                             color: Color(0xFF3B98FF),
                           ),
                         ),
-                      if (!isChannel && currentUserId > 0 && item['id'] == currentUserId) ...[
+                      if (isGroup) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '• ${UserActivityHelper.formatMembers(item['members_count'] is int ? item['members_count'] as int : (int.tryParse(item['members_count']?.toString() ?? '') ?? 1))}',
+                          style: const TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 12.5,
+                            color: Color(0xFF929292),
+                          ),
+                        ),
+                      ] else if (!isChannel && currentUserId > 0 && item['id'] == currentUserId) ...[
                         const SizedBox(width: 6),
                         const Text(
                           '• это вы (Избранное)',
@@ -837,12 +910,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
   Widget _buildChatItem(BuildContext context, Chat chat) {
     final isSaved = chat.isSaved;
     final isChannel = chat.isChannel;
-    final isVerified = chat.isVerified;
-    final isPremium = chat.isPremium;
+    final isGroup = chat.isGroup;
+    final isVerified = !isGroup && chat.isVerified;
+    final isPremium = !isGroup && chat.isPremium;
     final isPinned = chat.isPinned;
     final chatProvider = context.watch<ChatProvider>();
     final isTyping = chatProvider.isUserTyping(chat.id);
-    final isOnline = chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline;
+    final isOnline = !isGroup && !isChannel && (chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline);
     String timeStr = _formatMessageTime(chat.lastMessageTime);
     if (timeStr.isEmpty && chat.lastMessageDate.isNotEmpty) {
       timeStr = _formatMessageTime(chat.lastMessageDate);
@@ -863,7 +937,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
             onTap: () {
               context.read<ChatProvider>().preloadChat(
                 chat.id,
-                participantId: chat.isChannel ? null : chat.participantId,
+                participantId: (chat.isChannel || chat.isGroup) ? null : chat.participantId,
                 isChannel: chat.isChannel,
               );
               Navigator.push(
@@ -889,6 +963,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                     isOnline: isOnline,
                     isSaved: isSaved,
                     isChannel: isChannel,
+                    isGroup: isGroup,
                   ),
                   const SizedBox(width: 13),
 
@@ -910,7 +985,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                             ],
 
                             // For users: verification badge (dev or user) is to the LEFT of nickname
-                            if (!isChannel && isVerified) ...[
+                            if (!isChannel && !isGroup && isVerified) ...[
                               VerificationBadge(verification: chat.effectiveVerification, size: 18.5),
                               const SizedBox(width: 5),
                             ],
@@ -938,7 +1013,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                             ],
 
                             // For users: premium star is to the RIGHT of nickname
-                            if (!isChannel && isPremium) ...[
+                            if (!isChannel && !isGroup && isPremium) ...[
                               const SizedBox(width: 5),
                               const PremiumBadge(size: 18.5),
                             ],

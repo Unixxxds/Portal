@@ -422,7 +422,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
         ? 'https://portalmsg.ru/${_currentChat.inviteCode}'
         : 'https://portalmsg.ru/$cleanUsername';
     final descText = (_currentChat.description ?? '').trim();
-    final hasVerified = VerificationBadge.isVerified(_liveVerification);
+    final hasVerified = !_currentChat.isGroup && VerificationBadge.isVerified(_liveVerification);
 
     return Scaffold(
       backgroundColor: Colors.black,
