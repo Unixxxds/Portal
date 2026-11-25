@@ -26,6 +26,12 @@ class AuthProvider with ChangeNotifier {
   String? _cloudPasswordHint;
   StreamSubscription? _wsSub;
 
+  AuthProvider() {
+    ApiService.instance.onUnauthorized = () {
+      logout();
+    };
+  }
+
   AuthStatus get status => _status;
   AuthStep get step => _step;
   User? get currentUser => _currentUser;
@@ -534,6 +540,11 @@ class AuthProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('AuthProvider.refreshCurrentUser error: $e');
+      if (e.toString().contains('401') ||
+          e.toString().contains('Недействительный токен') ||
+          e.toString().contains('Необходима авторизация')) {
+        await logout();
+      }
     }
   }
 

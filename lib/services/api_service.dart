@@ -10,6 +10,7 @@ import '../models/post_comment.dart';
 class ApiService {
   static final ApiService instance = ApiService._init();
   late final Dio _dio;
+  VoidCallback? onUnauthorized;
 
   ApiService._init() {
     _dio = Dio(
@@ -34,7 +35,15 @@ class ApiService {
           return handler.next(options);
         },
         onError: (DioException error, handler) {
-          // Log errors or handle 401 unauth
+          if (error.response?.statusCode == 401) {
+            final path = error.requestOptions.path;
+            final isAuthPath = path.contains('/api/auth/send-code') ||
+                path.contains('/api/auth/verify-code') ||
+                path.contains('/api/auth/verify-cloud-password');
+            if (!isAuthPath) {
+              onUnauthorized?.call();
+            }
+          }
           return handler.next(error);
         },
       ),
