@@ -34,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
   int _countdown = 0;
   Timer? _timer;
   String? _localError;
+  bool _isVerifying = false;
 
   @override
   void initState() {
@@ -144,46 +145,68 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleVerifyCode() async {
-    setState(() => _localError = null);
+    if (_isVerifying) return;
     final code = _getCode();
     if (code.length < 6) {
       setState(() => _localError = 'Введите полный 6-значный код');
       return;
     }
 
-    final email = _emailController.text.trim().toLowerCase();
-    final auth = context.read<AuthProvider>();
-    final success = await auth.verifyCode(email, code);
-    if (!mounted) return;
+    setState(() {
+      _isVerifying = true;
+      _localError = null;
+    });
 
-    if (success) {
-      if (mounted) {
-        context.read<ChatProvider>().init();
+    try {
+      final email = _emailController.text.trim().toLowerCase();
+      final auth = context.read<AuthProvider>();
+      final success = await auth.verifyCode(email, code);
+      if (!mounted) return;
+
+      if (success) {
+        if (mounted) {
+          context.read<ChatProvider>().init();
+        }
+      } else {
+        setState(() => _localError = auth.errorMessage ?? 'Неверный код подтверждения');
       }
-    } else {
-      setState(() => _localError = auth.errorMessage ?? 'Неверный код подтверждения');
+    } finally {
+      if (mounted) {
+        setState(() => _isVerifying = false);
+      }
     }
   }
 
   Future<void> _handleVerifyCloudPassword() async {
-    setState(() => _localError = null);
+    if (_isVerifying) return;
     final password = _cloudPasswordController.text.trim();
     if (password.isEmpty) {
       setState(() => _localError = 'Введите облачный пароль');
       return;
     }
 
-    final auth = context.read<AuthProvider>();
-    final email = _emailController.text.trim().toLowerCase();
-    final success = await auth.verifyCloudPassword(email, password);
-    if (!mounted) return;
+    setState(() {
+      _isVerifying = true;
+      _localError = null;
+    });
 
-    if (success) {
-      if (mounted) {
-        context.read<ChatProvider>().init();
+    try {
+      final auth = context.read<AuthProvider>();
+      final email = _emailController.text.trim().toLowerCase();
+      final success = await auth.verifyCloudPassword(email, password);
+      if (!mounted) return;
+
+      if (success) {
+        if (mounted) {
+          context.read<ChatProvider>().init();
+        }
+      } else {
+        setState(() => _localError = auth.errorMessage ?? 'Неверный облачный пароль');
       }
-    } else {
-      setState(() => _localError = auth.errorMessage ?? 'Неверный облачный пароль');
+    } finally {
+      if (mounted) {
+        setState(() => _isVerifying = false);
+      }
     }
   }
 

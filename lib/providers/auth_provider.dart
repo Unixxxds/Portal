@@ -28,7 +28,9 @@ class AuthProvider with ChangeNotifier {
 
   AuthProvider() {
     ApiService.instance.onUnauthorized = () {
-      logout();
+      if (_status == AuthStatus.authenticated && !_isLoading) {
+        logout();
+      }
     };
   }
 
@@ -49,6 +51,7 @@ class AuthProvider with ChangeNotifier {
       final userId = await SecureStorageService.instance.getCurrentUserId();
 
       if (token != null && token.isNotEmpty) {
+        ApiService.instance.setAuthToken(token);
         if (userId != null) {
           await DatabaseHelper.setActiveUserId(userId);
           _currentUser = await DatabaseHelper.instance.getUser(userId);
@@ -122,6 +125,7 @@ class AuthProvider with ChangeNotifier {
         // Прямой вход без 2FA
         if (res['token'] != null) {
           final token = res['token'].toString();
+          ApiService.instance.setAuthToken(token);
           await SecureStorageService.instance.saveToken(token);
 
           if (res['user'] != null && res['user'] is Map<String, dynamic>) {
@@ -182,6 +186,7 @@ class AuthProvider with ChangeNotifier {
       final res = await ApiService.instance.verifyCloudPassword(_cloudTempToken!, password);
       if (res['success'] == true && res['token'] != null) {
         final token = res['token'].toString();
+        ApiService.instance.setAuthToken(token);
         await SecureStorageService.instance.saveToken(token);
 
         if (res['user'] != null && res['user'] is Map<String, dynamic>) {
@@ -540,10 +545,12 @@ class AuthProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('AuthProvider.refreshCurrentUser error: $e');
-      if (e.toString().contains('401') ||
-          e.toString().contains('Недействительный токен') ||
-          e.toString().contains('Необходима авторизация')) {
-        await logout();
+      if (_status == AuthStatus.authenticated && !_isLoading) {
+        if (e.toString().contains('401') ||
+            e.toString().contains('Недействительный токен') ||
+            e.toString().contains('Необходима авторизация')) {
+          await logout();
+        }
       }
     }
   }
@@ -559,6 +566,7 @@ class AuthProvider with ChangeNotifier {
       WebSocketService.instance.disconnect();
 
       // 2. Устанавливаем новый токен и ID пользователя в хранилище
+      ApiService.instance.setAuthToken(targetSession.token);
       await SecureStorageService.instance.saveToken(targetSession.token);
       await SecureStorageService.instance.saveCurrentUserId(targetSession.userId);
 
@@ -608,6 +616,7 @@ class AuthProvider with ChangeNotifier {
       return;
     }
 
+    ApiService.instance.clearAuthToken();
     WebSocketService.instance.disconnect();
     PushNotificationService.instance.unregister();
     await SecureStorageService.instance.clearAll();

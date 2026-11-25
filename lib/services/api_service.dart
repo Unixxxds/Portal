@@ -11,6 +11,15 @@ class ApiService {
   static final ApiService instance = ApiService._init();
   late final Dio _dio;
   VoidCallback? onUnauthorized;
+  String? _cachedToken;
+
+  void setAuthToken(String? token) {
+    _cachedToken = token;
+  }
+
+  void clearAuthToken() {
+    _cachedToken = null;
+  }
 
   ApiService._init() {
     _dio = Dio(
@@ -28,7 +37,13 @@ class ApiService {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await SecureStorageService.instance.getToken();
+          String? token = _cachedToken;
+          if (token == null || token.isEmpty) {
+            token = await SecureStorageService.instance.getToken();
+            if (token != null && token.isNotEmpty) {
+              _cachedToken = token;
+            }
+          }
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
@@ -41,7 +56,11 @@ class ApiService {
                 path.contains('/api/auth/verify-code') ||
                 path.contains('/api/auth/verify-cloud-password');
             if (!isAuthPath) {
-              onUnauthorized?.call();
+              final reqAuth = error.requestOptions.headers['Authorization']?.toString();
+              final currentAuth = _cachedToken != null && _cachedToken!.isNotEmpty ? 'Bearer $_cachedToken' : null;
+              if (currentAuth == null || reqAuth == currentAuth) {
+                onUnauthorized?.call();
+              }
             }
           }
           return handler.next(error);
