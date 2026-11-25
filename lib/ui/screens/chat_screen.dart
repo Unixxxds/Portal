@@ -778,22 +778,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
 
     final isTyping = chatProvider.isUserTyping(widget.chat.id);
-    final currentChat = chatProvider.chats.firstWhere(
-      (c) => c.isChannel == widget.chat.isChannel && c.id == widget.chat.id,
+    final isGroup = widget.chat.isGroup || widget.chat.type == 'group';
+    final isChannel = widget.chat.isChannel || widget.chat.type == 'channel';
+
+    Chat currentChat = chatProvider.chats.firstWhere(
+      (c) => (isGroup ? c.isGroup : (c.isChannel == isChannel)) && c.id == widget.chat.id,
       orElse: () => widget.chat,
     );
+
+    if (isGroup && !currentChat.isGroup) {
+      currentChat = currentChat.copyWith(
+        isGroupChat: true,
+        type: 'group',
+        participantId: null,
+        membersCount: widget.chat.membersCount > 0 ? widget.chat.membersCount : currentChat.membersCount,
+        inviteCode: widget.chat.inviteCode ?? currentChat.inviteCode,
+      );
+    }
+
     final isChannelOwner = currentChat.isChannel &&
         (_canPostToChannel ||
          (currentUserId > 0 &&
           ((_channelOwnerId != null && _channelOwnerId == currentUserId) ||
            (currentChat.ownerId != null && currentChat.ownerId == currentUserId) ||
            (widget.chat.ownerId != null && widget.chat.ownerId == currentUserId))));
-    final pId = currentChat.participantId ?? widget.chat.participantId;
-    final isOnline = (pId != null && chatProvider.isUserOnline(pId)) ||
-        chatProvider.isUserOnline(currentChat.id) ||
-        chatProvider.isUserOnline(widget.chat.id) ||
-        currentChat.isOnline ||
-        widget.chat.isOnline;
+
+    final isGrp = currentChat.isGroup || isGroup;
+    final isChan = currentChat.isChannel || isChannel;
+    final pId = (isGrp || isChan) ? null : (currentChat.participantId ?? widget.chat.participantId);
+    final isOnline = (!isGrp && !isChan) && (
+        (pId != null && chatProvider.isUserOnline(pId)) ||
+        (pId != null && (currentChat.isOnline || widget.chat.isOnline))
+    );
 
     final pinnedMessage = chatProvider.getPinnedMessage(currentChat.id);
     final hasPinned = pinnedMessage != null;
@@ -961,6 +977,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildEmptyChatPlaceholder() {
+    if (widget.chat.isGroup || widget.chat.type == 'group') {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AvatarWidget(
+            avatarUrl: widget.chat.avatar,
+            title: widget.chat.title,
+            size: 68,
+            isGroup: true,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            widget.chat.title,
+            style: const TextStyle(
+              fontFamily: AppTheme.fontDisplay,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'В этой группе пока нет сообщений',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTheme.fontText,
+              fontSize: 13.5,
+              color: AppTheme.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      );
+    }
+
     if (widget.chat.isChannel) {
       return Column(
         mainAxisSize: MainAxisSize.min,
@@ -2052,8 +2103,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final currentUserName = authProvider.currentUser?.displayName ?? '';
     final currentUserAvatar = authProvider.currentUser?.avatar ?? '';
 
+    final isGroup = widget.chat.isGroup || widget.chat.type == 'group';
     final currentChat = chatProvider.chats.firstWhere(
-      (c) => c.isChannel == widget.chat.isChannel && c.id == widget.chat.id,
+      (c) => (isGroup ? c.isGroup : (c.isChannel == widget.chat.isChannel)) && c.id == widget.chat.id,
       orElse: () => widget.chat,
     );
     final isChannelOwner = currentChat.isChannel &&

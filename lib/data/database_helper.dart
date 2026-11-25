@@ -443,8 +443,8 @@ class DatabaseHelper {
           if (nowStr.isNotEmpty) 'last_seen': nowStr,
           'updated_at': DateTime.now().toIso8601String(),
         },
-        where: 'participant_id = ? OR id = ?',
-        whereArgs: [userId, userId],
+        where: 'participant_id = ? AND is_channel = 0 AND is_group = 0',
+        whereArgs: [userId],
       );
       await db.update(
         'users',
@@ -687,7 +687,8 @@ class DatabaseHelper {
         }
 
         final isChan = (c['is_channel'] == 1 || c['is_channel'] == true);
-        final pId = isChan
+        final isGrp = (c['is_group'] == 1 || c['is_group'] == true || c['type'] == 'group');
+        final pId = (isChan || isGrp)
             ? null
             : (c['participant_id'] is int
                 ? c['participant_id'] as int
@@ -711,7 +712,7 @@ class DatabaseHelper {
                (uname.toLowerCase() == 'portal' ? 'verified' :
                 (uname.toLowerCase() == 'botfather' ? 'verified' : 'none')));
 
-        final isSavedChat = !isChan && (
+        final isSavedChat = !isChan && !isGrp && (
           c['type'] == 'saved' ||
           (activeUserId > 0 && pId != null && pId == activeUserId && (c['type'] == 'saved' || rawTitle.toLowerCase().contains('избранное'))) ||
           rawTitle.toLowerCase().contains('избранное') ||
@@ -720,8 +721,10 @@ class DatabaseHelper {
         );
 
         final title = isSavedChat ? 'Избранное' : rawTitle;
-        final chatType = isChan ? 'channel' : (isSavedChat ? 'saved' : (c['type']?.toString() ?? 'direct'));
+        final chatType = isChan ? 'channel' : (isGrp ? 'group' : (isSavedChat ? 'saved' : (c['type']?.toString() ?? 'direct')));
         final chatAvatar = isSavedChat ? '' : (c['avatar']?.toString() ?? '');
+        final mCount = (c['members_count'] is int ? c['members_count'] as int : int.tryParse(c['members_count']?.toString() ?? '1')) ?? 1;
+        final invCode = c['invite_code']?.toString() ?? '';
 
         batch.insert(
           'chats',
@@ -735,16 +738,19 @@ class DatabaseHelper {
             'unread_count': finalUnread,
             'is_pinned': (c['is_pinned'] == 1 || c['is_pinned'] == true) ? 1 : 0,
             'is_channel': isChan ? 1 : 0,
-            'is_online': (c['is_online'] == true || c['is_online'] == 1) ? 1 : 0,
-            'last_seen': c['last_seen']?.toString() ?? '',
-            'participant_id': isSavedChat ? activeUserId : pId,
+            'is_group': isGrp ? 1 : 0,
+            'members_count': mCount,
+            'invite_code': invCode,
+            'is_online': (!isGrp && !isChan && (c['is_online'] == true || c['is_online'] == 1)) ? 1 : 0,
+            'last_seen': (!isGrp && !isChan) ? (c['last_seen']?.toString() ?? '') : '',
+            'participant_id': isSavedChat ? activeUserId : ((isChan || isGrp) ? null : pId),
             'owner_id': oId,
             'banner_url': isSavedChat ? '' : (c['banner_url']?.toString() ?? c['banner']?.toString() ?? ''),
             'description': c['description']?.toString() ?? c['about']?.toString() ?? '',
-            'phone': isSavedChat ? '' : (c['phone']?.toString() ?? ''),
+            'phone': (isSavedChat || isChan || isGrp) ? '' : (c['phone']?.toString() ?? ''),
             'username': isSavedChat ? '' : uname,
-            'verification': isSavedChat ? 'none' : effectiveV,
-            'is_premium': isSavedChat ? 0 : ((c['is_premium'] == true || c['is_premium'] == 1 || c['isPremium'] == true) ? 1 : 0),
+            'verification': (isSavedChat || isGrp) ? 'none' : effectiveV,
+            'is_premium': (isSavedChat || isGrp) ? 0 : ((c['is_premium'] == true || c['is_premium'] == 1 || c['isPremium'] == true) ? 1 : 0),
             'updated_at': DateTime.now().toIso8601String(),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,

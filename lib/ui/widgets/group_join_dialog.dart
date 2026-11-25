@@ -80,6 +80,9 @@ class _GroupJoinDialogState extends State<GroupJoinDialog> {
           isSubscribed: true,
         );
 
+        await chatProvider.addOrUpdateChat(targetChat);
+
+        if (!mounted) return;
         Navigator.of(context).push(
           TelegramChatRoute(
             builder: (_) => ChatScreen(chat: targetChat!),

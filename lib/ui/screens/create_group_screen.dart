@@ -283,7 +283,9 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             verification: 'none',
             isPremium: false,
           );
+          await chatProvider.addOrUpdateChat(createdChat);
 
+          if (!mounted) return;
           Navigator.push(
             context,
             TelegramChatRoute(
