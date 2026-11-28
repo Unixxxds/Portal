@@ -22,6 +22,7 @@ class User {
   final String privacyAvatar;
   final bool hideSparks;
   final bool profileCompleted;
+  final bool isBot;
 
   User({
     required this.id,
@@ -47,6 +48,7 @@ class User {
     this.privacyAvatar = 'all',
     this.hideSparks = false,
     this.profileCompleted = false,
+    this.isBot = false,
   });
 
   String get fullName {
@@ -107,6 +109,7 @@ class User {
       privacyAvatar: json['privacy_avatar']?.toString() ?? 'all',
       hideSparks: json['hide_sparks'] == true || json['hide_sparks'] == 1 || json['hideSparks'] == true,
       profileCompleted: json['profile_completed'] == true || json['profile_completed'] == 1 || json['profileCompleted'] == true,
+      isBot: json['is_bot'] == true || json['is_bot'] == 1 || json['type'] == 'bot' || (json['username']?.toString().toLowerCase() == 'botfather'),
       secondaryUsernames: (json['secondary_usernames'] is List)
           ? (json['secondary_usernames'] as List)
               .map((e) => e.toString().trim().replaceFirst(RegExp(r'^@+'), ''))
@@ -152,6 +155,7 @@ class User {
       'privacy_avatar': privacyAvatar,
       'hide_sparks': hideSparks ? 1 : 0,
       'profile_completed': profileCompleted ? 1 : 0,
+      'is_bot': isBot ? 1 : 0,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -198,6 +202,7 @@ class User {
       privacyAvatar: map['privacy_avatar']?.toString() ?? 'all',
       hideSparks: map['hide_sparks'] == 1 || map['hide_sparks'] == true || map['hideSparks'] == true,
       profileCompleted: map['profile_completed'] == 1 || map['profile_completed'] == true,
+      isBot: map['is_bot'] == 1 || map['is_bot'] == true || (map['username']?.toString().toLowerCase() == 'botfather'),
       secondaryUsernames: (map['secondary_usernames'] is String && (map['secondary_usernames'] as String).isNotEmpty)
           ? (map['secondary_usernames'] as String)
               .split(',')
@@ -234,6 +239,7 @@ class User {
     String? privacyAvatar,
     bool? hideSparks,
     bool? profileCompleted,
+    bool? isBot,
   }) {
     return User(
       id: id ?? this.id,
@@ -259,6 +265,7 @@ class User {
       privacyAvatar: privacyAvatar ?? this.privacyAvatar,
       hideSparks: hideSparks ?? this.hideSparks,
       profileCompleted: profileCompleted ?? this.profileCompleted,
+      isBot: isBot ?? this.isBot,
     );
   }
 }

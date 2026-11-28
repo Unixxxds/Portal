@@ -48,6 +48,51 @@ import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 
+class BotCommandTextEditingController extends TextEditingController {
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final text = value.text;
+    if (text.isEmpty) {
+      return TextSpan(text: '', style: style);
+    }
+    final commandRegex = RegExp(r'(?:^|(?<=[\s(]))\/[a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?');
+    final matches = commandRegex.allMatches(text);
+    if (matches.isEmpty) {
+      return TextSpan(text: text, style: style);
+    }
+
+    final spans = <InlineSpan>[];
+    int last = 0;
+    for (final match in matches) {
+      if (match.start > last) {
+        spans.add(TextSpan(
+          text: text.substring(last, match.start),
+          style: style,
+        ));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: (style ?? const TextStyle()).copyWith(
+          color: const Color(0xFF3B98FF),
+          fontWeight: FontWeight.w500,
+        ),
+      ));
+      last = match.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(last),
+        style: style,
+      ));
+    }
+    return TextSpan(children: spans, style: style);
+  }
+}
+
 class ChatScreen extends StatefulWidget {
   final Chat chat;
 
@@ -58,10 +103,11 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
-  final _textController = TextEditingController();
+  final _textController = BotCommandTextEditingController();
   final _textFocusNode = FocusNode();
   final _scrollController = ScrollController();
   bool _isTypingSent = false;
+  bool _botStarted = false;
   Message? _replyingToMessage;
   Message? _editingMessage;
   late bool _isSubscribed;
@@ -468,6 +514,82 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _isSendingSticker = false;
       }
     }
+  }
+
+  bool get _isCurrentChatBot {
+    return widget.chat.isBot ||
+        widget.chat.type == 'bot' ||
+        widget.chat.username?.toLowerCase() == 'botfather';
+  }
+
+  void _handleCommandTap(String command) {
+    final clean = command.trim();
+    if (clean.isEmpty) return;
+    HapticFeedback.lightImpact();
+    setState(() {
+      _botStarted = true;
+    });
+    final provider = context.read<ChatProvider>();
+    provider.sendMessage(widget.chat.id, clean);
+    _scrollToBottom();
+  }
+
+  Future<void> _handleBotStart() async {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _botStarted = true;
+    });
+    final provider = context.read<ChatProvider>();
+    await provider.sendMessage(widget.chat.id, '/start');
+    _scrollToBottom();
+  }
+
+  Widget _buildBotStartBar() {
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final bottomPadding = bottomInset > 0
+        ? 8.0
+        : (mediaQuery.padding.bottom > 0 ? mediaQuery.padding.bottom : 12.0);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
+      child: Container(
+        width: double.infinity,
+        height: 50,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
+            onTap: _handleBotStart,
+            borderRadius: BorderRadius.circular(999),
+            splashColor: Colors.black12,
+            highlightColor: Colors.black.withOpacity(0.06),
+            child: const Center(
+              child: Text(
+                'СТАРТ',
+                style: TextStyle(
+                  fontFamily: AppTheme.fontDisplay,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _checkMicrophonePermission() async {
@@ -948,9 +1070,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                 ),
 
-                // Floating Input Bar or Channel Subscribe Bar
+                // Floating Input Bar, Channel Subscribe Bar, or Bot Start Button
                 if (currentChat.isChannel && !isChannelOwner)
                   _buildChannelSubscribeBar()
+                else if (_isCurrentChatBot && !_botStarted && !messages.any((m) => m.senderId == currentUserId))
+                  _buildBotStartBar()
                 else
                   _buildFloatingInputBar(),
               ],
@@ -1009,6 +1133,77 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
         ],
+      );
+    }
+
+    if (_isCurrentChatBot) {
+      final desc = (widget.chat.description != null && widget.chat.description!.trim().isNotEmpty)
+          ? widget.chat.description!.trim()
+          : (widget.chat.username?.toLowerCase() == 'botfather'
+              ? 'Официальный бот Portal для создания и управления ботами'
+              : 'Этот бот поможет вам выполнять полезные действия в Portal.');
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFF191919),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0x1AFFFFFF),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AvatarWidget(
+              avatarUrl: widget.chat.avatar,
+              title: widget.chat.title,
+              size: 64,
+              isBot: true,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              widget.chat.title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: AppTheme.fontDisplay,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Что умеет этот бот?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppTheme.fontDisplay,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF3B98FF),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              desc,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: AppTheme.fontText,
+                fontSize: 13.5,
+                color: Color(0xFFB0B0B0),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -1260,8 +1455,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // FLOATING CAPSULE HEADER (NO BLACK UNDERLAY)
   // ===========================================================================
   PreferredSizeWidget _buildLiquidGlassHeader(bool isTyping, Chat chat, bool isOnline, bool isChannelOwner) {
+    final isBot = chat.isBot || _isCurrentChatBot;
     final isActivityHidden = chat.privacyLastSeen == 'nobody' || chat.isActivityHidden;
-    final effectiveOnline = !isActivityHidden && isOnline;
+    final effectiveOnline = !isBot && !isActivityHidden && isOnline;
     final statusText = isTyping
         ? 'печатает...'
         : (chat.isChannel
@@ -1275,11 +1471,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     isOnline: effectiveOnline,
                     lastSeen: isActivityHidden ? null : chat.lastSeen,
                     isChannel: chat.isChannel,
+                    isBot: isBot,
                     isActivityHidden: isActivityHidden,
                   )));
     final statusColor = isTyping
         ? Colors.white
-        : (effectiveOnline ? AppTheme.statusOnline : const Color(0xFF929292));
+        : (isBot ? const Color(0xFF929292) : (effectiveOnline ? AppTheme.statusOnline : const Color(0xFF929292)));
 
     final headerTitle = (chat.isChannel && _liveTitle != null && _liveTitle!.isNotEmpty)
         ? _liveTitle!
@@ -1360,10 +1557,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         if (chat.isChannel || chat.isGroup) {
                           _showChannelInfoModal(context, chat);
                         } else {
+                          final targetChat = isBot ? chat.copyWith(isBot: true) : chat;
                           Navigator.push(
                             context,
                             TelegramProfileRoute(
-                              builder: (context) => UserProfileScreen(chat: chat, fromChat: true),
+                              builder: (context) => UserProfileScreen(chat: targetChat, fromChat: true),
                             ),
                           );
                         }
@@ -1405,10 +1603,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 avatarUrl: headerAvatar,
                                 title: displayTitle,
                                 size: 36,
-                                isOnline: !isGroup && !chat.isChannel && isOnline,
+                                isOnline: !isGroup && !chat.isChannel && !isBot && isOnline,
                                 isSaved: chat.isSaved,
                                 isChannel: chat.isChannel,
                                 isGroup: isGroup,
+                                isBot: isBot,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1450,7 +1649,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                       ],
 
                                       // For users: premium star is to the RIGHT of nickname
-                                      if (!chat.isChannel && !isGroup && isPrem) ...[
+                                      if (!chat.isChannel && !isGroup && !isBot && isPrem) ...[
                                         const SizedBox(width: 5),
                                         const PremiumBadge(size: 18.0),
                                       ],
@@ -2293,6 +2492,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               isMe: false,
               onUsernameTap: _handleUsernameTap,
               onLinkTap: _handleLinkTap,
+              onCommandTap: _handleCommandTap,
               style: const TextStyle(
                 fontFamily: AppTheme.fontText,
                 color: Colors.white,
@@ -2353,6 +2553,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       isMe: false,
       onUsernameTap: _handleUsernameTap,
       onLinkTap: _handleLinkTap,
+      onCommandTap: _handleCommandTap,
       style: const TextStyle(
         fontFamily: AppTheme.fontText,
         color: Colors.white,
@@ -3251,6 +3452,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             isMe: isMe,
             onUsernameTap: _handleUsernameTap,
             onLinkTap: _handleLinkTap,
+            onCommandTap: _handleCommandTap,
             style: const TextStyle(
               fontFamily: AppTheme.fontText,
               color: Colors.white,
@@ -3288,6 +3490,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             isMe: isMe,
             onUsernameTap: _handleUsernameTap,
             onLinkTap: _handleLinkTap,
+            onCommandTap: _handleCommandTap,
             style: const TextStyle(
               fontFamily: AppTheme.fontText,
               color: Colors.white,
@@ -3337,6 +3540,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   style: textStyle,
                   onUsernameTap: _handleUsernameTap,
                   onLinkTap: _handleLinkTap,
+                  onCommandTap: _handleCommandTap,
                 ),
               ),
               const SizedBox(width: 8),
@@ -3359,6 +3563,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               style: textStyle,
               onUsernameTap: _handleUsernameTap,
               onLinkTap: _handleLinkTap,
+              onCommandTap: _handleCommandTap,
             ),
             const SizedBox(height: 3),
             Align(
@@ -4134,6 +4339,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               FormattedMessageText(
                                 text: caption,
                                 messageId: msg.id,
+                                onUsernameTap: _handleUsernameTap,
+                                onLinkTap: _handleLinkTap,
+                                onCommandTap: _handleCommandTap,
                                 style: const TextStyle(
                                   fontFamily: AppTheme.fontText,
                                   color: Colors.white,

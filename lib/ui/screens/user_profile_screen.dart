@@ -525,11 +525,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
             : (chat.title.toLowerCase() == 'никита' ? 'unix' : (chat.title.toLowerCase() == 'revs' ? 'revs' : 'user')));
     final username = rawUsername.replaceFirst(RegExp(r'^@+'), '');
 
+    final isBot = user?.isBot == true || chat.isBot || (username.toLowerCase() == 'botfather');
+
     String description = '';
     if (user?.description != null && user!.description!.trim().isNotEmpty) {
       description = user.description!.trim();
     } else if (chat.description != null && chat.description!.trim().isNotEmpty) {
       description = chat.description!.trim();
+    } else if (isBot) {
+      description = username.toLowerCase() == 'botfather'
+          ? 'Официальный бот Portal для создания и управления ботами'
+          : 'Бот Portal';
     } else if (chat.title.toLowerCase() == 'никита') {
       description = 'CEO #2';
     } else if (chat.title.toLowerCase() == 'revs' || username.toLowerCase() == 'revs') {
@@ -539,7 +545,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     }
 
     String phone = '';
-    if (user?.phone != null && user!.phone!.trim().isNotEmpty) {
+    if (isBot) {
+      phone = '';
+    } else if (user?.phone != null && user!.phone!.trim().isNotEmpty) {
       phone = user.phone!.trim();
     } else if (chat.phone != null && chat.phone!.trim().isNotEmpty) {
       phone = chat.phone!.trim();
@@ -573,14 +581,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
     final isActivityHidden = (user?.privacyLastSeen == 'nobody') ||
         (chat.privacyLastSeen == 'nobody') ||
         chat.isActivityHidden;
-    final isOnline = isMyProfile
+    final isOnline = !isBot && (isMyProfile
         ? (user?.isOnline ?? chat.isOnline)
-        : (!isActivityHidden && (user?.isOnline ?? chat.isOnline));
+        : (!isActivityHidden && (user?.isOnline ?? chat.isOnline)));
 
-    final canSeeSparks = isMyProfile ||
+    final canSeeSparks = !isBot && (isMyProfile ||
         ((user?.privacySparks ?? chat.privacySparks) != 'nobody' &&
             user?.hideSparks != true &&
-            chat.hideSparks != true);
+            chat.hideSparks != true));
 
     // Resolve banner (from current user, API user profile, or chat model)
     String bannerRaw = '';
@@ -771,6 +779,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                               size: 88,
                               isOnline: false,
                               isSaved: chat.isSaved,
+                              isBot: isBot,
                             ),
                           ),
                         ),
@@ -837,6 +846,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                               isOnline: isOnline,
                               lastSeen: isActivityHidden ? null : (user?.lastSeen ?? chat.lastSeen),
                               isChannel: chat.isChannel,
+                              isBot: isBot,
                               isActivityHidden: isActivityHidden,
                             ),
                             style: TextStyle(
@@ -917,21 +927,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _buildRoundActionButton(
-                              icon: Icons.phone_rounded,
-                              label: 'звонок',
-                              backgroundColor: profileTheme.buttonColor,
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Аудиозвонок...'),
-                                    duration: Duration(seconds: 1),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 20),
+                            if (!isBot) ...[
+                              _buildRoundActionButton(
+                                icon: Icons.phone_rounded,
+                                label: 'звонок',
+                                backgroundColor: profileTheme.buttonColor,
+                                onTap: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Аудиозвонок...'),
+                                      duration: Duration(seconds: 1),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 20),
+                            ],
                             _buildRoundActionButton(
                               svgAsset: 'lib/assets/chat.svg',
                               label: 'написать',
@@ -1121,15 +1133,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                       verification: verification,
                       isVerified: isVerified,
                     ),
-                    const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
 
-                    // номер телефона
-                    _buildInfoRow(
-                      label: 'номер телефона',
-                      value: phone,
-                      isInteractive: true,
-                      onTap: () => _copyToClipboard(phone, 'Номер телефона'),
-                    ),
+                    // номер телефона (скрыт для ботов)
+                    if (!isBot && phone.isNotEmpty) ...[
+                      const Divider(color: Color(0x14FFFFFF), height: 1, indent: 16, endIndent: 16),
+                      _buildInfoRow(
+                        label: 'номер телефона',
+                        value: phone,
+                        isInteractive: true,
+                        onTap: () => _copyToClipboard(phone, 'Номер телефона'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1279,116 +1293,118 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
               const SizedBox(height: 24),
 
               // ===============================================================
-              // SECTION: ПОДАРКИ (3-Column Square Grid)
+              // SECTION: ПОДАРКИ (3-Column Square Grid) - скрыт для ботов
               // ===============================================================
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Подарки',
-                      style: TextStyle(
-                        fontFamily: AppTheme.fontDisplay,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_userGifts.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF191919),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
-                        ),
-                        child: Text(
-                          '${_userGifts.length}',
-                          style: const TextStyle(
-                            fontFamily: AppTheme.fontText,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF929292),
-                          ),
+              if (!isBot) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Подарки',
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontDisplay,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
                         ),
                       ),
-                    const Spacer(),
-                    if (_isLoadingGifts)
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    else
-                      InkWell(
-                        onTap: () {
-                          SendGiftModal.show(
-                            context,
-                            chat: widget.chat,
-                            recipientId: widget.chat.participantId ?? _userProfile?.id ?? 0,
-                            recipientUsername: widget.chat.title,
-                            onGiftSent: (newGift) {
-                              if (mounted) {
-                                _loadGifts();
-                              }
-                            },
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(999),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      const SizedBox(width: 8),
+                      if (_userGifts.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
                             color: const Color(0xFF191919),
-                            borderRadius: BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.card_giftcard_rounded, size: 15, color: Colors.white),
-                              SizedBox(width: 5),
-                              Text(
-                                'Подарить',
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontText,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            '${_userGifts.length}',
+                            style: const TextStyle(
+                              fontFamily: AppTheme.fontText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF929292),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              if (_userGifts.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                      childAspectRatio: 1.0,
-                    ),
-                    itemCount: _userGifts.length,
-                    itemBuilder: (context, index) {
-                      final gift = _userGifts[index];
-                      return RepaintBoundary(
-                        child: _buildGiftCard(gift),
-                      );
-                    },
+                      const Spacer(),
+                      if (_isLoadingGifts)
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      else
+                        InkWell(
+                          onTap: () {
+                            SendGiftModal.show(
+                              context,
+                              chat: widget.chat,
+                              recipientId: widget.chat.participantId ?? _userProfile?.id ?? 0,
+                              recipientUsername: widget.chat.title,
+                              onGiftSent: (newGift) {
+                                if (mounted) {
+                                  _loadGifts();
+                                }
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF191919),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: const Color(0x1AFFFFFF), width: 0.8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.card_giftcard_rounded, size: 15, color: Colors.white),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Подарить',
+                                  style: TextStyle(
+                                    fontFamily: AppTheme.fontText,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                )
-              else if (!_isLoadingGifts)
-                _buildEmptyGifts(),
+                ),
+                const SizedBox(height: 12),
+
+                if (_userGifts.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 1.0,
+                      ),
+                      itemCount: _userGifts.length,
+                      itemBuilder: (context, index) {
+                        final gift = _userGifts[index];
+                        return RepaintBoundary(
+                          child: _buildGiftCard(gift),
+                        );
+                      },
+                    ),
+                  )
+                else if (!_isLoadingGifts)
+                  _buildEmptyGifts(),
+              ],
                     ],
                   ),
                 ),

@@ -296,6 +296,9 @@ class DatabaseHelper {
       if (!chatCols.contains('is_group')) {
         await db.execute("ALTER TABLE chats ADD COLUMN is_group INTEGER DEFAULT 0;");
       }
+      if (!chatCols.contains('is_bot')) {
+        await db.execute("ALTER TABLE chats ADD COLUMN is_bot INTEGER DEFAULT 0;");
+      }
 
       final userCols = (await db.rawQuery("PRAGMA table_info(users)"))
           .map((e) => e['name']?.toString())
@@ -356,6 +359,9 @@ class DatabaseHelper {
       }
       if (!userCols.contains('profile_completed')) {
         await db.execute("ALTER TABLE users ADD COLUMN profile_completed INTEGER DEFAULT 0;");
+      }
+      if (!userCols.contains('is_bot')) {
+        await db.execute("ALTER TABLE users ADD COLUMN is_bot INTEGER DEFAULT 0;");
       }
 
       final msgCols = (await db.rawQuery("PRAGMA table_info(messages)"))
@@ -688,6 +694,7 @@ class DatabaseHelper {
 
         final isChan = (c['is_channel'] == 1 || c['is_channel'] == true);
         final isGrp = (c['is_group'] == 1 || c['is_group'] == true || c['type'] == 'group');
+        final isBot = (c['is_bot'] == 1 || c['is_bot'] == true || c['type'] == 'bot' || (c['username']?.toString().toLowerCase() == 'botfather'));
         final pId = (isChan || isGrp)
             ? null
             : (c['participant_id'] is int
@@ -739,10 +746,11 @@ class DatabaseHelper {
             'is_pinned': (c['is_pinned'] == 1 || c['is_pinned'] == true) ? 1 : 0,
             'is_channel': isChan ? 1 : 0,
             'is_group': isGrp ? 1 : 0,
+            'is_bot': isBot ? 1 : 0,
             'members_count': mCount,
             'invite_code': invCode,
-            'is_online': (!isGrp && !isChan && (c['is_online'] == true || c['is_online'] == 1)) ? 1 : 0,
-            'last_seen': (!isGrp && !isChan) ? (c['last_seen']?.toString() ?? '') : '',
+            'is_online': (!isGrp && !isChan && !isBot && (c['is_online'] == true || c['is_online'] == 1)) ? 1 : 0,
+            'last_seen': (!isGrp && !isChan && !isBot) ? (c['last_seen']?.toString() ?? '') : '',
             'participant_id': isSavedChat ? activeUserId : ((isChan || isGrp) ? null : pId),
             'owner_id': oId,
             'banner_url': isSavedChat ? '' : (c['banner_url']?.toString() ?? c['banner']?.toString() ?? ''),

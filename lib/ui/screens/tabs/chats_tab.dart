@@ -248,6 +248,11 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       return;
     }
 
+    final isBot = item['is_bot'] == 1 ||
+        item['is_bot'] == true ||
+        item['type'] == 'bot' ||
+        (username?.toLowerCase() == 'botfather');
+
     // 1. Ищем существующий диалог
     Chat? existing;
     for (final c in chatProvider.chats) {
@@ -263,6 +268,12 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     }
 
     if (existing != null) {
+      if (isBot && !existing.isBot) {
+        existing = existing.copyWith(
+          isBot: true,
+          description: item['description']?.toString(),
+        );
+      }
       if (context.mounted) {
         context.read<ChatProvider>().preloadChat(
           existing.id,
@@ -283,6 +294,12 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       Chat directChat;
       if (res['chat'] is Map<String, dynamic>) {
         directChat = Chat.fromJson(res['chat'] as Map<String, dynamic>);
+        if (isBot && !directChat.isBot) {
+          directChat = directChat.copyWith(
+            isBot: true,
+            description: item['description']?.toString(),
+          );
+        }
       } else {
         final newId = res['chatId'] is int
             ? res['chatId'] as int
@@ -290,11 +307,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
         directChat = Chat(
           id: newId,
           title: displayName,
-          type: 'direct',
+          type: isBot ? 'bot' : 'direct',
           avatar: avatar,
           participantId: targetUserId,
           username: username,
-          isOnline: isOnline,
+          isBot: isBot,
+          description: item['description']?.toString(),
+          isOnline: !isBot && isOnline,
           lastSeen: lastSeen,
         );
       }
@@ -314,11 +333,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
       final directChat = Chat(
         id: targetUserId,
         title: displayName,
-        type: 'direct',
+        type: isBot ? 'bot' : 'direct',
         avatar: avatar,
         participantId: targetUserId,
         username: username,
-        isOnline: isOnline,
+        isBot: isBot,
+        description: item['description']?.toString(),
+        isOnline: !isBot && isOnline,
         lastSeen: lastSeen,
       );
       await chatProvider.addOrUpdateChat(directChat);
@@ -365,7 +386,11 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
             (uname == 'botfather' ? 'verified' : null)));
 
     final isVerified = !isGroup && VerificationBadge.isVerified(verification);
-    final isPremium = !isGroup && (item['is_premium'] == true ||
+    final isBot = item['is_bot'] == 1 ||
+        item['is_bot'] == true ||
+        item['type'] == 'bot' ||
+        uname == 'botfather';
+    final isPremium = !isGroup && !isBot && (item['is_premium'] == true ||
         item['is_premium'] == 1 ||
         item['isPremium'] == true);
 
@@ -398,9 +423,10 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
               avatarUrl: avatar,
               title: displayName,
               size: 48,
-              isOnline: !isChannel && !isGroup && isOnline,
+              isOnline: !isChannel && !isGroup && !isBot && isOnline,
               isChannel: isChannel,
               isGroup: isGroup,
+              isBot: isBot,
             ),
             const SizedBox(width: 14),
 
@@ -489,6 +515,17 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                             fontFamily: AppTheme.fontText,
                             fontSize: 12.5,
                             color: Color(0xFF929292),
+                          ),
+                        ),
+                      ] else if (isBot) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          '• бот',
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontText,
+                            fontSize: 12.5,
+                            color: Color(0xFF929292),
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ] else if (!isChannel && currentUserId > 0 && item['id'] == currentUserId) ...[
@@ -911,12 +948,13 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
     final isSaved = chat.isSaved;
     final isChannel = chat.isChannel;
     final isGroup = chat.isGroup;
+    final isBot = chat.isBot;
     final isVerified = !isGroup && chat.isVerified;
-    final isPremium = !isGroup && chat.isPremium;
+    final isPremium = !isGroup && !isBot && chat.isPremium;
     final isPinned = chat.isPinned;
     final chatProvider = context.watch<ChatProvider>();
     final isTyping = chatProvider.isUserTyping(chat.id);
-    final isOnline = !isGroup && !isChannel && (chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline);
+    final isOnline = !isGroup && !isChannel && !isBot && (chatProvider.isUserOnline(chat.participantId ?? chat.id) || chat.isOnline);
     String timeStr = _formatMessageTime(chat.lastMessageTime);
     if (timeStr.isEmpty && chat.lastMessageDate.isNotEmpty) {
       timeStr = _formatMessageTime(chat.lastMessageDate);
@@ -964,6 +1002,7 @@ class _ChatsTabState extends State<ChatsTab> with SingleTickerProviderStateMixin
                     isSaved: isSaved,
                     isChannel: isChannel,
                     isGroup: isGroup,
+                    isBot: isBot,
                   ),
                   const SizedBox(width: 13),
 

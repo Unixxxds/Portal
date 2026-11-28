@@ -13,6 +13,7 @@ class FormattedMessageText extends StatelessWidget {
   final bool isMe;
   final void Function(String username)? onUsernameTap;
   final void Function(String url)? onLinkTap;
+  final void Function(String command)? onCommandTap;
 
   const FormattedMessageText({
     super.key,
@@ -22,6 +23,7 @@ class FormattedMessageText extends StatelessWidget {
     this.isMe = false,
     this.onUsernameTap,
     this.onLinkTap,
+    this.onCommandTap,
   });
 
   static const List<Color> _quotePalette = [
@@ -36,7 +38,7 @@ class FormattedMessageText extends StatelessWidget {
   ];
 
   static final RegExp _combinedRegex = RegExp(
-    r'((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9.\-]+\.(?:com|ru|org|net|io|me|app|dev|by|kz|ua)[^\s]*)|(@[a-zA-Z0-9_]{3,32})',
+    r'((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9.\-]+\.(?:com|ru|org|net|io|me|app|dev|by|kz|ua)[^\s]*)|(@[a-zA-Z0-9_]{3,32})|((?:^|(?<=[\s(]))\/[a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?)',
     caseSensitive: false,
   );
 
@@ -70,8 +72,22 @@ class FormattedMessageText extends StatelessWidget {
 
       final matchedText = match.group(0)!;
       final isUsername = matchedText.startsWith('@');
+      final isCommand = matchedText.startsWith('/');
 
-      if (isUsername) {
+      if (isCommand) {
+        spans.add(TextSpan(
+          text: matchedText,
+          style: defaultStyle.copyWith(
+            color: const Color(0xFF3B98FF),
+            fontWeight: FontWeight.w500,
+            decoration: TextDecoration.none,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () {
+              onCommandTap?.call(matchedText);
+            },
+        ));
+      } else if (isUsername) {
         final cleanUsername = matchedText.substring(1);
         spans.add(TextSpan(
           text: matchedText,

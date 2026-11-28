@@ -10,6 +10,7 @@ class Chat {
   final int unreadCount;
   final bool isPinned;
   final bool isChannel;
+  final bool isBot;
   final bool isOnline;
   final String? lastSeen;
   final int? participantId;
@@ -43,6 +44,7 @@ class Chat {
     this.unreadCount = 0,
     this.isPinned = false,
     this.isChannel = false,
+    this.isBot = false,
     this.isOnline = false,
     this.lastSeen,
     this.participantId,
@@ -180,6 +182,7 @@ class Chat {
     int? unreadCount,
     bool? isPinned,
     bool? isChannel,
+    bool? isBot,
     bool? isOnline,
     String? lastSeen,
     int? participantId,
@@ -213,6 +216,7 @@ class Chat {
       unreadCount: unreadCount ?? this.unreadCount,
       isPinned: isPinned ?? this.isPinned,
       isChannel: isChannel ?? this.isChannel,
+      isBot: isBot ?? this.isBot,
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
       participantId: participantId ?? this.participantId,
@@ -292,6 +296,10 @@ class Chat {
 
     final isChan = json['is_channel'] == 1 || json['is_channel'] == true;
     final isGrp = json['is_group'] == 1 || json['is_group'] == true || json['type'] == 'group';
+    final isBot = json['is_bot'] == 1 ||
+        json['is_bot'] == true ||
+        json['type'] == 'bot' ||
+        (json['username']?.toString().toLowerCase() == 'botfather');
     final invCode = json['invite_code']?.toString();
     final mCount = json['members_count'] is int
         ? json['members_count'] as int
@@ -330,7 +338,8 @@ class Chat {
           : int.tryParse(json['unread_count']?.toString() ?? '0') ?? 0,
       isPinned: json['is_pinned'] == 1 || json['is_pinned'] == true,
       isChannel: isChan,
-      isOnline: json['is_online'] == true || json['is_online'] == 1,
+      isBot: isBot,
+      isOnline: (!isBot && (json['is_online'] == true || json['is_online'] == 1)),
       lastSeen: json['last_seen']?.toString(),
       participantId: pId,
       ownerId: oId,
@@ -380,6 +389,7 @@ class Chat {
       'unread_count': unreadCount,
       'is_pinned': isPinned ? 1 : 0,
       'is_channel': isChannel ? 1 : 0,
+      'is_bot': isBot ? 1 : 0,
       'is_online': isOnline ? 1 : 0,
       'last_seen': lastSeen ?? '',
       'participant_id': participantId,
@@ -407,6 +417,9 @@ class Chat {
             ? rawVerif
             : null;
     final isGrp = map['type'] == 'group' || (map['is_group'] as int? ?? 0) == 1;
+    final isBot = (map['is_bot'] as int? ?? 0) == 1 ||
+        (map['type'] == 'bot') ||
+        (map['username']?.toString().toLowerCase() == 'botfather');
     return Chat(
       id: map['id'] as int,
       title: map['title']?.toString() ?? 'Чат',
@@ -417,7 +430,8 @@ class Chat {
       unreadCount: map['unread_count'] as int? ?? 0,
       isPinned: (map['is_pinned'] as int? ?? 0) == 1,
       isChannel: (map['is_channel'] as int? ?? 0) == 1,
-      isOnline: (map['is_online'] as int? ?? 0) == 1,
+      isBot: isBot,
+      isOnline: !isBot && (map['is_online'] as int? ?? 0) == 1,
       lastSeen: map['last_seen']?.toString(),
       participantId: map['participant_id'] as int?,
       ownerId: map['owner_id'] as int?,

@@ -203,7 +203,7 @@ class AvatarWidget extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         content,
-        if (isOnline && !isGroup && !isChannel && !isSaved)
+        if (isOnline && !isGroup && !isChannel && !isSaved && !isBot)
           Positioned(
             right: 0,
             bottom: 0,
