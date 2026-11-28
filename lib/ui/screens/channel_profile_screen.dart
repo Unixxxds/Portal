@@ -497,7 +497,8 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                           avatarUrl: _currentChat.avatar,
                           title: _currentChat.title,
                           size: 88,
-                          isChannel: true,
+                          isChannel: !_currentChat.isGroup,
+                          isGroup: _currentChat.isGroup,
                         ),
                       ),
                     ),
@@ -957,7 +958,11 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
   Widget _buildMemberTile(Map<String, dynamic> m, bool isFirst, bool isLast) {
     final rawName = '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim();
     final displayName = rawName.isNotEmpty ? rawName : (m['username']?.toString() ?? 'Пользователь');
-    final isOwner = _ownerId != null && m['id'] == _ownerId;
+    final isOwner = (_ownerId != null && m['id'] == _ownerId) ||
+        m['is_owner'] == 1 ||
+        m['is_owner'] == true ||
+        m['role'] == 'owner';
+    final isAdmin = !isOwner && (m['is_admin'] == 1 || m['is_admin'] == true || m['role'] == 'admin');
     final verif = m['verification']?.toString();
     final hasVerif = VerificationBadge.isVerified(verif);
     final isPrem = m['is_premium'] == 1 || m['is_premium'] == true;
@@ -1000,6 +1005,7 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
               avatarUrl: m['avatar']?.toString() ?? '',
               title: displayName,
               size: 42,
+              isOnline: isOnline,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1031,13 +1037,46 @@ class _ChannelProfileScreenState extends State<ChannelProfileScreen> {
                       ],
                       if (isOwner) ...[
                         const Spacer(),
-                        const Text(
-                          'владелец',
-                          style: TextStyle(
-                            color: Color(0xFFA594F9),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: AppTheme.fontText,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0x26A594F9),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x4DA594F9),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'владелец',
+                            style: TextStyle(
+                              color: Color(0xFFA594F9),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: AppTheme.fontText,
+                            ),
+                          ),
+                        ),
+                      ] else if (isAdmin) ...[
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0x263B98FF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x4D3B98FF),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'админ',
+                            style: TextStyle(
+                              color: Color(0xFF3B98FF),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: AppTheme.fontText,
+                            ),
                           ),
                         ),
                       ],

@@ -872,7 +872,8 @@ class ApiService {
       final res = await _dio.get('/api/groups/$chatId/members');
       if (res.data is Map && res.data['members'] is List) {
         return (res.data['members'] as List)
-            .whereType<Map<String, dynamic>>()
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       return [];
@@ -915,7 +916,7 @@ class ApiService {
     try {
       final res = await _dio.get('/api/groups/$chatId');
       if (res.data is Map && res.data['group'] is Map) {
-        return res.data['group'] as Map<String, dynamic>;
+        return Map<String, dynamic>.from(res.data['group'] as Map);
       }
       return null;
     } catch (_) {
